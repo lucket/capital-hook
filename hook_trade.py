@@ -5,7 +5,7 @@ from service.capital_api import open_trade, close_trade, is_market_closed
 from datetime import datetime
 from database import insert_trade_history
 from enums.trade import TradeInstrument, TradeMode
-from service.capital_socket import capital_socket, memory
+from service.socket_manager import socket_manager, memory
 from utils import round_trade_size
 from typing import List
 
@@ -163,7 +163,7 @@ class HookedTradeExecution:
 
     async def execute_trade(self):
         try:
-            await capital_socket.subscribe_to_epic(self.epic)
+            await socket_manager.subscribe(self.epic)
             
             # set risk reward
             await self.__risk_reward_setup()
@@ -190,7 +190,7 @@ class HookedTradeExecution:
             
             
         except Exception as err:
-            await capital_socket.unsubscribe_from_epic(self.epic)
+            await socket_manager.unsubscribe(self.epic)
             memory.remove_trading_view_hooked_trades(self.epic, self.hook_name)
             await Logger.app_log(title=f"{self.hook_name.upper()}_ERR_[{self.epic}]", message=str(err))
 
