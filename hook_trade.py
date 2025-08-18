@@ -187,8 +187,11 @@ class HookedTradeExecution:
             
             # remove position from memory
             memory.remove_position(self.deal_id)
-            
-            
+
+            # remove from hook trades when exits not on strategy
+            if self.exit_type != ExitType.STRATEGY:
+                memory.remove_trading_view_hooked_trades(self.epic, self.hook_name)
+
         except Exception as err:
             await socket_manager.unsubscribe(self.epic)
             memory.remove_trading_view_hooked_trades(self.epic, self.hook_name)
