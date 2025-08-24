@@ -124,7 +124,7 @@ class HookedTradeExecution:
         elif ExitType.TP in self.exit_criteria and current_price <= self.target_profit_price and self.trade_direction == TradeDirection.SELL:
             await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
             self.exit_type = ExitType.TP
-            self.log_trade("closed")
+            await self.log_trade("closed")
             return True, profit_loss, percentage
         
         # risk monitor short
