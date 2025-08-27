@@ -65,6 +65,8 @@ class CapitalSocket:
             
         except Exception as e:
             await Logger.app_log(title="SUBSCRIBE_ERR", message=f"{epic}: {str(e)}")
+            await asyncio.sleep(1 * 60)  # 1 minute sleep
+            await self.subscribe_to_epic(epic)
 
 
     async def unsubscribe_from_epic(self, epic: str):
