@@ -19,6 +19,9 @@ class Jobs:
         scheduler.add_job(update_auth_header, "interval", minutes=5)
         # update markets
         scheduler.add_job(update_markets, "interval", hours=5)
+        # update epic hours
+        scheduler.add_job(self.update_epic_hours, "interval", hours=5)
+
         # start schd
         scheduler.start()
         for job in scheduler.get_jobs():
