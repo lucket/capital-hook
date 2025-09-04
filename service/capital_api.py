@@ -312,6 +312,8 @@ async def is_market_closed(epic: str, min: int = 5) -> bool:
                 start_time_today = parse_time_str(start_str, now_utc)
                 end_time_today   = parse_time_str(end_str, now_utc)
 
+                print(start_time_today, end_time_today, now_utc)
+
                 if end_time_today < start_time_today:
                     end_time_today += timedelta(days=1)
 
@@ -319,7 +321,7 @@ async def is_market_closed(epic: str, min: int = 5) -> bool:
                     time_remaining_minutes = (end_time_today - now_utc).total_seconds() / 60
                     return time_remaining_minutes <= min
 
-            return False
+            return True
 
         except Exception as e:
             await Logger.app_log(title="MARKET_HRS_ERR", message=f"{epic}: {str(e)}")

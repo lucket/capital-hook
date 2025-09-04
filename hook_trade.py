@@ -115,10 +115,10 @@ class HookedTradeExecution:
         
         # risk monitor long
         elif ExitType.SL in self.exit_criteria and current_price <= self.stop_loss_price and self.trade_direction == TradeDirection.BUY:
-                await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
-                self.exit_type = ExitType.SL
-                await self.log_trade("closed")
-                return True, profit_loss, percentage
+            await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
+            self.exit_type = ExitType.SL
+            await self.log_trade("closed")
+            return True, profit_loss, percentage
             
         # reward monitor short
         elif ExitType.TP in self.exit_criteria and current_price <= self.target_profit_price and self.trade_direction == TradeDirection.SELL:
@@ -136,7 +136,7 @@ class HookedTradeExecution:
         
         # market closed?
         elif ExitType.MKT_CLOSED in self.exit_criteria and await is_market_closed(self.epic):
-            await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id)
+            await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
             self.exit_type = ExitType.MKT_CLOSED
             await self.log_trade("closed")
             return True, profit_loss, percentage
