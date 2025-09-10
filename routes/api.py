@@ -2,6 +2,7 @@ from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 from service.capital_api import portfolio_balance, memory
 from model import HookPayloadModel, TradeModeModel, ExitType
+from fastapi.responses import StreamingResponse
 
 
 api = APIRouter()
@@ -28,12 +29,36 @@ async def get_portfolio():
         content=memory.positions
     )
 
-@api.get("/history")
-async def get_history():
+@api.get("/history/download")
+async def download_history():
     """
-    Get the history of trades.
+    Download the history of trades.
     """
-    pass
+    from database import get_trade_history
+    import csv
+    import io
+    data = await get_trade_history()
+    trades = data.get("trades", [])
+    if not trades:
+        return StreamingResponse(io.StringIO("No trades found"), media_type="text/csv")
+
+    # Remove 'id' from each trade
+    filtered_trades = [{k: v for k, v in trade.items() if k != "id"} for trade in trades]
+
+    # Write CSV to memory
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=filtered_trades[0].keys())
+    writer.writeheader()
+    writer.writerows(filtered_trades)
+    output.seek(0)
+
+    # Return as downloadable file
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=trades.csv"}
+    )
+
 
 
 @api.get("/preference")
