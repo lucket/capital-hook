@@ -59,7 +59,7 @@ class HookedTradeExecution:
         leverage_size = self.capital_size * memory.get_leverage(self.epic)
         self.trade_size = float(leverage_size / self.entry_price)
         if self.trade_instrument == TradeInstrument.CURRENCIES:
-            self.trade_size = round(self.trade_size, -2)
+            self.trade_size = max(100, round(self.trade_size, -2))
         elif self.trade_instrument == TradeInstrument.SHARES:
             self.trade_size = round(self.trade_size)
         elif self.trade_instrument == TradeInstrument.COMMODITIES:
