@@ -292,7 +292,7 @@ def parse_time_str(t: str, now: datetime):
     return now.replace(hour=parsed.hour, minute=parsed.minute, second=parsed.second, microsecond=0)
      
                      
-async def is_market_closed(epic: str, min: int = 5) -> bool:
+async def is_market_closed(epic: str, min: int = 2) -> bool:
         try:
             hours = memory.trading_hours.get(epic, {})
             if not hours:

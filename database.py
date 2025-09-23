@@ -71,9 +71,10 @@ async def insert_trade_history(trade_id: str, epic: str, size: float, pnl: float
         await db.commit()
 
 
-async def get_trade_history() -> list:
+async def get_trade_history(mode: TradeMode = None ) -> list:
     from memory import memory, settings
     from utils import datetime_format
+    mode = settings.TRADE_MODE if not mode else mode
     trades = []
     profits = 0
     loasses = 0
@@ -83,7 +84,7 @@ async def get_trade_history() -> list:
         async with db.cursor() as cursor:
             await cursor.execute(
                 "SELECT * FROM trades WHERE mode = ? ORDER BY closed_at DESC",
-                (settings.TRADE_MODE.value,)
+                (mode.value,)
             )
             rows = await cursor.fetchall()
             for row in rows:
