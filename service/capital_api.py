@@ -325,6 +325,57 @@ async def is_market_closed(epic: str, min: int = 2) -> bool:
             await Logger.app_log(title="MARKET_HRS_ERR", message=f"{epic}: {str(e)}")
             return False
         
+
+async def is_market_eow_close(epic: str, min: int = 2) -> bool:
+    try:
+        hours = memory.trading_hours.get(epic, {})
+        if not hours:
+            hours = memory.trading_hours[epic] = await get_epic_hours(epic)
+
+        # find last trading window of the week
+        weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        last_day = None
+        last_range = None
+
+        for day in reversed(weekdays):
+            day_hours = hours.get(day, [])
+            if day_hours:
+                last_day = day
+                last_range = day_hours[-1]  # assume ranges are sorted
+                break
+
+        if not last_range:
+            return False  # no trading hours at all for this epic
+
+        now_utc = datetime.utcnow()
+        start_str, end_str = last_range.split(" - ")
+
+        # align to actual date of the last trading day
+        today_key = now_utc.strftime("%a").lower()
+        day_index_now = weekdays.index(today_key)
+        day_index_last = weekdays.index(last_day)
+
+        # calculate target end datetime
+        days_diff = (day_index_last - day_index_now) % 7
+        ref_date = now_utc + timedelta(days=days_diff)
+
+        start_time = parse_time_str(start_str, ref_date)
+        end_time = parse_time_str(end_str, ref_date)
+        if end_time < start_time:
+            end_time += timedelta(days=1)
+
+        # only relevant if we're on the last day
+        if today_key == last_day:
+            if start_time <= now_utc < end_time:
+                time_remaining_minutes = (end_time - now_utc).total_seconds() / 60
+                return time_remaining_minutes <= min
+
+        return False
+
+    except Exception as e:
+        await Logger.app_log(title="MARKET_EOW_ERR", message=f"{epic}: {str(e)}")
+        return False
+
         
 
 async def portfolio_balance():

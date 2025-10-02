@@ -1,7 +1,7 @@
 import asyncio
 from enums.trade import TradeDirection, ExitType
 from logger import Logger
-from service.capital_api import open_trade, close_trade, is_market_closed
+from service.capital_api import is_market_eow_close, open_trade, close_trade, is_market_closed
 from datetime import datetime
 from database import insert_trade_history
 from enums.trade import TradeInstrument, TradeMode
@@ -138,6 +138,13 @@ class HookedTradeExecution:
         elif ExitType.MKT_CLOSED in self.exit_criteria and await is_market_closed(self.epic):
             await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
             self.exit_type = ExitType.MKT_CLOSED
+            await self.log_trade("closed")
+            return True, profit_loss, percentage
+        
+        # End Of Week market closed?
+        elif ExitType.EOW_CLOSE in self.exit_criteria and await is_market_eow_close(self.epic):
+            await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
+            self.exit_type = ExitType.EOW_CLOSE
             await self.log_trade("closed")
             return True, profit_loss, percentage
         
