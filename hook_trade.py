@@ -28,6 +28,8 @@ class HookedTradeExecution:
     exit_type: ExitType
     opened_trade_at: datetime
     position_mode: TradeMode
+    profit_loss: float
+    percentage: float
     
     
     def __init__(self, trade_direction: TradeDirection, epic: str, trade_amount: int, profit: int, loss: int, hook_name: str, exit_criteria: List[ExitType]):
@@ -102,9 +104,13 @@ class HookedTradeExecution:
     async def __monitor_position(self) -> tuple:
         ask, bid = memory.get_current_price(self.epic)
         current_price = bid if self.trade_direction == TradeDirection.BUY else ask
+        if not current_price:
+            return False, self.profit_loss, self.percentage
+        
         profit_loss, percentage = self.__calculate_profit_loss(current_price)
         self.exit_price = ask if self.trade_direction == TradeDirection.BUY else bid
         memory.update_position(deal_id=self.deal_id, pnl=profit_loss, trade_direction=self.trade_direction, epic=self.epic, trade_size=self.trade_size, entry_date=self.opened_trade_at.strftime("%d %b %H:%M"), hook_name=self.hook_name, entry_price=self.entry_price)
+
         
         # reward monitor long
         if ExitType.TP in self.exit_criteria and current_price >= self.target_profit_price and self.trade_direction == TradeDirection.BUY:
@@ -164,6 +170,8 @@ class HookedTradeExecution:
             return True, profit_loss, percentage
         
         else:
+            self.profit_loss = profit_loss
+            self.percentage = percentage
             return False, profit_loss, percentage
         
         
