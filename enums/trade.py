@@ -14,6 +14,7 @@ class ExitType(Enum):
     MKT_CLOSED = "MKT_CLOSED"
     STRATEGY = "STRATEGY"
     EOW_CLOSE = "EOW_CLOSE"
+    RECALIBRATE = "RECALIBRATE"
     
 class TradeMode(Enum):
     DEMO = "DEMO"

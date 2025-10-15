@@ -161,13 +161,21 @@ class HookedTradeExecution:
             await self.log_trade("closed")
             return True, profit_loss, percentage
 
-            
-        
+        # manual exit
         elif memory.manual_trade_exit_signal(self.deal_id):
             await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
             self.exit_type = ExitType.USER
             await self.log_trade("closed")
             return True, profit_loss, percentage
+        
+
+        # reclibrate
+        elif memory.positions_pnl() >= memory.recalibrate_pnl:
+            await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
+            self.exit_type = ExitType.RECALIBRATE
+            await self.log_trade("closed")
+            return True, profit_loss, percentage
+
         
         else:
             self.profit_loss = profit_loss

@@ -14,6 +14,7 @@ class Memory:
     preferences: dict = {}
     hooked_trades: Dict[str, TradeDirection] = {}
     portfolio: dict = {}
+    recalibrate_pnl: float = 500.0  # PnL threshold for recalibration
 
 
     def get_trade_mode_for_deal_id(self, deal_id: str) -> TradeMode | None:
@@ -107,6 +108,15 @@ class Memory:
     
     def get_trading_view_hooked_trade_side(self, epic: str, hook_name) -> TradeDirection:
         return self.hooked_trades.get(f"{epic}_{hook_name}", TradeDirection.NEUTRAL)
+    
+
+    def positions_count(self) -> int:
+        """Get the count of current open positions."""
+        return len(self.positions[settings.TRADE_MODE.value])
+    
+    def positions_pnl(self) -> float:
+        """Get the total PnL of current open positions."""
+        return sum(pos["pnl"] for pos in self.positions[settings.TRADE_MODE.value].values())
     
         
         
