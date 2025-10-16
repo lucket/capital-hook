@@ -24,8 +24,9 @@ class HookPayloadModel(BaseModel):
     take_profit_exit: Optional[Literal['on']] = None
     stop_loss_exit: Optional[Literal['on']] = None
     strategy_exit: Optional[Literal['on']] = None
-    market_close_exit: Optional[Literal['on']] = None
-    
+    end_of_day_close_exit: Optional[Literal['on']] = None
+    end_of_week_close_exit: Optional[Literal['on']] = None
+
 
 class TradeModeModel(BaseModel):
     mode: TradeMode

@@ -97,7 +97,8 @@ async def generate_payload(data: HookPayloadModel):
         'take_profit_exit': ExitType.TP.value,
         'stop_loss_exit': ExitType.SL.value,
         'strategy_exit': ExitType.STRATEGY.value,
-        'market_close_exit': ExitType.MKT_CLOSED.value
+        'end_of_day_close_exit': ExitType.EOD_CLOSE.value,
+        'end_of_week_close_exit': ExitType.EOW_CLOSE.value
     }
 
     payload = {

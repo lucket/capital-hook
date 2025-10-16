@@ -141,9 +141,9 @@ class HookedTradeExecution:
             return True, profit_loss, percentage
         
         # market closed?
-        elif ExitType.MKT_CLOSED in self.exit_criteria and await is_market_closed(self.epic):
+        elif ExitType.EOD_CLOSE in self.exit_criteria and await is_market_closed(self.epic):
             await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
-            self.exit_type = ExitType.MKT_CLOSED
+            self.exit_type = ExitType.EOD_CLOSE
             await self.log_trade("closed")
             return True, profit_loss, percentage
         
