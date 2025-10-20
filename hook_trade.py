@@ -1,11 +1,11 @@
 import asyncio
 from enums.trade import TradeDirection, ExitType
 from logger import Logger
-from service.capital_api import open_trade, close_trade, is_market_closed
+from service.capital_api import is_market_eow_close, open_trade, close_trade, is_market_eod_close
 from datetime import datetime
 from database import insert_trade_history
 from enums.trade import TradeInstrument, TradeMode
-from service.capital_socket import capital_socket, memory
+from service.socket_manager import socket_manager, memory
 from utils import round_trade_size
 from typing import List
 
@@ -28,6 +28,8 @@ class HookedTradeExecution:
     exit_type: ExitType
     opened_trade_at: datetime
     position_mode: TradeMode
+    profit_loss: float
+    percentage: float
     
     
     def __init__(self, trade_direction: TradeDirection, epic: str, trade_amount: int, profit: int, loss: int, hook_name: str, exit_criteria: List[ExitType]):
@@ -59,7 +61,7 @@ class HookedTradeExecution:
         leverage_size = self.capital_size * memory.get_leverage(self.epic)
         self.trade_size = float(leverage_size / self.entry_price)
         if self.trade_instrument == TradeInstrument.CURRENCIES:
-            self.trade_size = round(self.trade_size, -2)
+            self.trade_size = max(100, round(self.trade_size, -2))
         elif self.trade_instrument == TradeInstrument.SHARES:
             self.trade_size = round(self.trade_size)
         elif self.trade_instrument == TradeInstrument.COMMODITIES:
@@ -102,9 +104,13 @@ class HookedTradeExecution:
     async def __monitor_position(self) -> tuple:
         ask, bid = memory.get_current_price(self.epic)
         current_price = bid if self.trade_direction == TradeDirection.BUY else ask
+        if not current_price:
+            return False, self.profit_loss, self.percentage
+        
         profit_loss, percentage = self.__calculate_profit_loss(current_price)
         self.exit_price = ask if self.trade_direction == TradeDirection.BUY else bid
         memory.update_position(deal_id=self.deal_id, pnl=profit_loss, trade_direction=self.trade_direction, epic=self.epic, trade_size=self.trade_size, entry_date=self.opened_trade_at.strftime("%d %b %H:%M"), hook_name=self.hook_name, entry_price=self.entry_price)
+
         
         # reward monitor long
         if ExitType.TP in self.exit_criteria and current_price >= self.target_profit_price and self.trade_direction == TradeDirection.BUY:
@@ -115,16 +121,16 @@ class HookedTradeExecution:
         
         # risk monitor long
         elif ExitType.SL in self.exit_criteria and current_price <= self.stop_loss_price and self.trade_direction == TradeDirection.BUY:
-                await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
-                self.exit_type = ExitType.SL
-                await self.log_trade("closed")
-                return True, profit_loss, percentage
+            await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
+            self.exit_type = ExitType.SL
+            await self.log_trade("closed")
+            return True, profit_loss, percentage
             
         # reward monitor short
         elif ExitType.TP in self.exit_criteria and current_price <= self.target_profit_price and self.trade_direction == TradeDirection.SELL:
             await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
             self.exit_type = ExitType.TP
-            self.log_trade("closed")
+            await self.log_trade("closed")
             return True, profit_loss, percentage
         
         # risk monitor short
@@ -135,9 +141,16 @@ class HookedTradeExecution:
             return True, profit_loss, percentage
         
         # market closed?
-        elif ExitType.MKT_CLOSED in self.exit_criteria and await is_market_closed(self.epic):
-            await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id)
-            self.exit_type = ExitType.MKT_CLOSED
+        elif ExitType.EOD_CLOSE in self.exit_criteria and await is_market_eod_close(self.epic):
+            await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
+            self.exit_type = ExitType.EOD_CLOSE
+            await self.log_trade("closed")
+            return True, profit_loss, percentage
+        
+        # End Of Week market closed?
+        elif ExitType.EOW_CLOSE in self.exit_criteria and await is_market_eow_close(self.epic):
+            await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
+            self.exit_type = ExitType.EOW_CLOSE
             await self.log_trade("closed")
             return True, profit_loss, percentage
         
@@ -148,22 +161,33 @@ class HookedTradeExecution:
             await self.log_trade("closed")
             return True, profit_loss, percentage
 
-            
+        # reclibrate
+        elif ExitType.RECALIBRATE in self.exit_criteria and memory.recalibrate_trade():
+            await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
+            self.exit_type = ExitType.RECALIBRATE
+            await self.log_trade("closed")
+            return True, profit_loss, percentage
         
+        # manual exit
         elif memory.manual_trade_exit_signal(self.deal_id):
             await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
             self.exit_type = ExitType.USER
             await self.log_trade("closed")
             return True, profit_loss, percentage
         
+
+
+        
         else:
+            self.profit_loss = profit_loss
+            self.percentage = percentage
             return False, profit_loss, percentage
         
         
 
     async def execute_trade(self):
         try:
-            await capital_socket.subscribe_to_epic(self.epic)
+            await socket_manager.subscribe(self.epic)
             
             # set risk reward
             await self.__risk_reward_setup()
@@ -187,10 +211,13 @@ class HookedTradeExecution:
             
             # remove position from memory
             memory.remove_position(self.deal_id)
-            
-            
+
+            # remove from hook trades when exits not on strategy
+            if self.exit_type != ExitType.STRATEGY:
+                memory.remove_trading_view_hooked_trades(self.epic, self.hook_name)
+
         except Exception as err:
-            await capital_socket.unsubscribe_from_epic(self.epic)
+            await socket_manager.unsubscribe(self.epic)
             memory.remove_trading_view_hooked_trades(self.epic, self.hook_name)
             await Logger.app_log(title=f"{self.hook_name.upper()}_ERR_[{self.epic}]", message=str(err))
 

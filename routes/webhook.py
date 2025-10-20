@@ -2,6 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from model import TradingViewWebhookModel
 from memory import memory, settings
+from service.capital_api import is_market_closed
 from logger import Logger
 
 webhook = APIRouter()
@@ -19,6 +20,11 @@ async def tradingview_webhook_route(data: TradingViewWebhookModel, request: Requ
     if data.epic not in memory.epics:
         await Logger.app_log(title="TradingView_Webhook_Error", message=f"Epic {data.epic} not available")
         return JSONResponse(status_code=400, content={"message": "Invalid epic"})
+    
+    # epic market hours check
+    if await is_market_closed(data.epic):
+        await Logger.app_log(title="TradingView_Webhook_Error", message=f"Market closed for {data.epic}")
+        return JSONResponse(status_code=400, content={"message": "Market closed"})
     
     # 
     if memory.get_trading_view_hooked_trade_side(data.epic, data.hook_name) == data.direction: # check if the trade is already executed on trade side

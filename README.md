@@ -13,22 +13,21 @@ Capital Hook provides a robust set of features designed to empower algorithmic t
   - **Live Positions**: View all trades currently in execution or managed by Capital Hook, providing immediate oversight of your active strategies.
   - **Demo & Live Mode Toggle**: Easily switch between your Capital.com demo and live accounts to test strategies risk-free or deploy them confidently to real markets.
 - **Dynamic Configuration**: A dedicated configuration page allows you to tailor the webhook behavior and trade parameters without modifying code:
-- **Payload Setup**: Define custom JSON payloads for incoming TradingView webhooks to perfectly match your strategy's needs.
-    - **Stop Loss (SL) & Take Profit (TP)**: Set default or dynamic SL/TP levels for automated trade management.
-    - **Market Closed Handling (`MKT_CLOSED`)**: Automatically manages trades when the market is about to close. If enabled, the hook will close any open position for the instrument 5 minutes before the market closes, ensuring positions are not left open during market downtime.
-    - **Strategy (`STRATEGY`) Switch**: Ensures that for each unique combination of `epic` and `hook_name` (strategy identifier), only one trade direction is active at a time. If a new signal arrives with the opposite `direction` (e.g., switching from BUY to SELL), the existing position is closed before opening the new one.
-    - **Hook Name (`HOOKNAME`) Switch**: Allows you to differentiate between multiple strategies or instances of the hook, providing more granular control and logging for each strategy or alert source.
+- **Payload Setup**: Configure custom JSON payloads from TradingView webhooks to align precisely with your trading strategy’s behavior and risk management rules.
+    - **Take Profit (`TP`)**: Defines a fixed profit target (e.g., $X) for each executed trade. When the TP payload is triggered, positions are automatically closed once the target gain is reached.
+    - **Stop Loss (`SL`)**: Sets a fixed maximum loss limit (e.g., $X) for every trade. The SL payload ensures trades are closed automatically once the predefined loss threshold is hit, protecting against excessive drawdowns.
+    - **Recalibrate (`RECALIBRATE`)**: Applies a default profit target of $500 with a trailing buffer of $70 to dynamically manage trade exits. This payload helps maintain overall portfolio profitability by triggering controlled closures during sudden market movements, ensuring near break-even results when volatility spikes.
+    - **End of Day Close (`EOD_CLOSE`)**: Automatically manages open positions as the trading day nears its close. When active, this hook detects the daily market shutdown time and closes all open trades for the instrument approximately 2 minutes before the session ends, preventing overnight exposure or downtime-related risks.
+    - **End of Week Close (`EOW_CLOSE`)**: Automatically closes all open positions for the instrument around 2 minutes before the market’s weekly close. This ensures no trades remain open through the weekend when markets are inactive, reducing gap risk on reopening.
+    - **Strategy (`STRATEGY`) Switch**: Maintains trade direction discipline by ensuring only one active position per `epic` and `hook_name` (strategy identifier). If a new signal is received in the opposite direction (e.g., switching from BUY to SELL), the existing position is first closed before initiating the new trade.
+    - **Hook Name (`HOOKNAME`) Switch**: Enables management of multiple independent strategies or webhook sources. Each unique hook name can represent a different trading logic or alert system, providing detailed control, tracking, and separation across strategies.
+
 - **Comprehensive Trade History**: Gain detailed insights into your performance with a real-time view of all closed trades, including:
     - **Detailed PnL (Profit & Loss)**: Analyze the profitability of individual trades and overall strategies.
     - **Execution Timestamps**: Track when trades were opened and closed.
     - **Associated Strategy Data**: Link closed trades back to the specific strategies that initiated them.
-    - **Persistent Storage with SQLite**: All trade history is securely stored in a local SQLite database, ensuring your trade records are retained across restarts and easily accessible for analysis.
+    - **Persistent Storage with SQLite**: All trade history is stored in a local SQLite database, ensuring your trade records are retained across restarts and easily accessible for analysis.
 
----
-
-## ⚠️ Known Limitations
-
-- **Epic Subscription Limit**: Currently, Capital Hook can subscribe to a maximum of **40 unique epics (trading instruments)** at any given time. While you can initiate and manage an unlimited number of trades, all concurrently active trades must fall within this limit of 40 subscribed epics. This means your diverse strategies should consider this constraint on the number of distinct instruments traded simultaneously.
 
 ---
 
@@ -45,13 +44,6 @@ Capital Hook provides a robust set of features designed to empower algorithmic t
 
 This guide will walk you through setting up and running Capital Hook on your local machine.
 
-### Prerequisites
-
-Before you begin, ensure you have the following installed:
-
-- **Python 3.9+**: The project relies on features available in newer Python versions. [Download Python](https://www.python.org/downloads/)
-- **`pip`**: The standard Python package installer. This usually comes pre-installed with Python.
-- **`git`**: A version control system used for cloning the project repository. If you don't have it, [install Git](https://git-scm.com/downloads).
 
 ### 1\. Clone the Repository
 
@@ -99,8 +91,6 @@ CAPITAL_IDENTITY="YOUR_CAPITAL_COM_IDENTITY"
 CAPITAL_PASSWORD="YOUR_CAPITAL_COM_PASSWORD"
 CAPITAL_API_KEY="YOUR_CAPITAL_COM_API_KEY"
 ```
-
-- Replace `"YOUR_CAPITAL_COM_IDENTITY"`, `"YOUR_CAPITAL_COM_PASSWORD"`
 
 ---
 
@@ -155,7 +145,7 @@ To automate your trades, you need to set up alerts in TradingView that send data
         "hook_name": "20/200EMA",
         "profit": 120.0,
         "loss": 50.0,
-        "exit_criteria": ["TP", "SL", "STRATEGY", "MKT_CLOSED"]
+        "exit_criteria": ["TP", "SL", "STRATEGY", "RECALIBRATE", "EOD_CLOSE", "EOW_CLOSE"]
         }
         ```
 

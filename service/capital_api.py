@@ -285,13 +285,18 @@ async def get_epic_hours(epic: str):
             await Logger.app_log(title="EPIC_HRS_ERR", message=f"{epic}: {str(e)}")
             return None
            
+def parse_time_str(t: str, now: datetime):
+    # Accept HH:MM or HH:MM:SS
+    fmt = "%H:%M:%S" if t.count(":") == 2 else "%H:%M"
+    parsed = datetime.strptime(t, fmt).time()
+    return now.replace(hour=parsed.hour, minute=parsed.minute, second=parsed.second, microsecond=0)
      
                      
-async def is_market_closed(epic: str, min: int = 5) -> bool:
+async def is_market_closed(epic: str, min: int = 2) -> bool:
         try:
             hours = memory.trading_hours.get(epic, {})
             if not hours:
-                hours = memory.trading_hours = await get_epic_hours(epic)
+                hours = memory.trading_hours[epic] = await get_epic_hours(epic)
             
             # print("Hours => ", hours)
             now_utc = datetime.utcnow()
@@ -303,26 +308,116 @@ async def is_market_closed(epic: str, min: int = 5) -> bool:
 
             for rng in day_hours:
                 start_str, end_str = rng.split(" - ")
-                start_hour, start_min = map(int, start_str.split(":"))
-                end_hour, end_min = map(int, end_str.split(":"))
-                # print("Start => ", start, "End => ", end)
 
-                start_time_today = now_utc.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
-                end_time_today = now_utc.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
+                start_time_today = parse_time_str(start_str, now_utc)
+                end_time_today   = parse_time_str(end_str, now_utc)
 
                 if end_time_today < start_time_today:
                     end_time_today += timedelta(days=1)
 
                 if start_time_today <= now_utc < end_time_today:
-                    # Market is currently open. Now check if it's closing soon.
                     time_remaining_minutes = (end_time_today - now_utc).total_seconds() / 60
                     return time_remaining_minutes <= min
-            
-            return False
+
+            return True
 
         except Exception as e:
+            await Logger.app_log(title="MARKET_HRS_ERR", message=f"{epic}: {str(e)}")
             return False
+     
+                     
+async def is_market_eod_close(epic: str, min: int = 2) -> bool:
+    try:
+        hours = memory.trading_hours.get(epic, {})
+        if not hours:
+            hours = memory.trading_hours[epic] = await get_epic_hours(epic)
+
+        now_utc = datetime.utcnow()
+        day_key = now_utc.strftime("%a").lower()
+        day_hours = hours.get(day_key, [])
+
+        # Market closed the whole day
+        if not day_hours:
+            return True
+
+        # Use only LAST trading range for today
+        start_str, end_str = day_hours[-1].split(" - ")
+
+        start_time_today = parse_time_str(start_str, now_utc)
+        end_time_today = parse_time_str(end_str, now_utc)
+
+        # Handle overnight session (e.g., 22:00 - 05:00 next day)
+        if end_time_today < start_time_today:
+            end_time_today += timedelta(days=1)
+
+        # Check if we're currently in that final session
+        if start_time_today <= now_utc < end_time_today:
+            time_remaining_minutes = (end_time_today - now_utc).total_seconds() / 60
+            return time_remaining_minutes <= min
+
+        # past the final session => market closed for day
+        if now_utc >= end_time_today:
+            return True
+
+        # market still widely open
+        return False
+
+    except Exception as e:
+        await Logger.app_log(title="MARKET_EOD_ERR", message=f"{epic}: {str(e)}")
+        return False
+
         
+
+async def is_market_eow_close(epic: str, min: int = 2) -> bool:
+    try:
+        hours = memory.trading_hours.get(epic, {})
+        if not hours:
+            hours = memory.trading_hours[epic] = await get_epic_hours(epic)
+
+        # find last trading window of the week
+        weekdays = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+        last_day = None
+        last_range = None
+
+        for day in reversed(weekdays):
+            day_hours = hours.get(day, [])
+            if day_hours:
+                last_day = day
+                last_range = day_hours[-1]
+                break
+        if not last_range:
+            return False 
+
+        now_utc = datetime.utcnow()
+        start_str, end_str = last_range.split(" - ")
+
+        # align to actual date of the last trading day
+        today_key = now_utc.strftime("%a").lower()
+        day_index_now = weekdays.index(today_key)
+        day_index_last = weekdays.index(last_day)
+
+        # calculate target end datetime
+        days_diff = (day_index_last - day_index_now) % 7
+        ref_date = now_utc + timedelta(days=days_diff)
+
+        start_time = parse_time_str(start_str, ref_date)
+        end_time = parse_time_str(end_str, ref_date)
+        if end_time < start_time:
+            end_time += timedelta(days=1)
+
+        # only relevant if we're on the last day
+        if today_key == last_day:
+            if start_time <= now_utc < end_time:
+                time_remaining_minutes = (end_time - now_utc).total_seconds() / 60
+                return time_remaining_minutes <= min
+
+        print(last_day, last_range)
+        return False
+
+    except Exception as e:
+        await Logger.app_log(title="MARKET_EOW_ERR", message=f"{epic}: {str(e)}")
+        return False
+
         
 
 async def portfolio_balance():

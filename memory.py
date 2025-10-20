@@ -1,19 +1,26 @@
 from enums.trade import TradeDirection, TradeInstrument
 from typing import Dict
 from settings import settings, TradeMode
+from recalibrate import TrailRecalibration
 
 
-class Memory:
-    positions: dict = {TradeMode.DEMO.value: {}, TradeMode.LIVE.value: {}}
-    deal_ids: set = set()
-    capital_auth_header: dict = {}
-    epics: list = []
-    trading_hours: dict = {}
-    instruments: dict = {}
-    market_data: dict = {}
-    preferences: dict = {}
-    hooked_trades: Dict[str, TradeDirection] = {}
-    portfolio: dict = {}
+class Memory(TrailRecalibration):
+
+    def __init__(self):
+        self.positions: dict = {TradeMode.DEMO.value: {}, TradeMode.LIVE.value: {}}
+        self.deal_ids: set = set()
+        self.capital_auth_header: dict = {}
+        self.epics: list = []
+        self.trading_hours: dict = {}
+        self.instruments: dict = {}
+        self.market_data: dict = {}
+        self.preferences: dict = {}
+        self.hooked_trades: Dict[str, TradeDirection] = {}
+        self.portfolio: dict = {}
+        self.recalibrate_profit: int = 500  # PnL threshold for recalibration
+        self.recalibrate_trail_guage: int = 70   # Trailing PnL for recalibration
+        super().__init__(0, recalibrate_at=self.recalibrate_profit, trail=self.recalibrate_trail_guage)
+
 
 
     def get_trade_mode_for_deal_id(self, deal_id: str) -> TradeMode | None:
@@ -51,8 +58,9 @@ class Memory:
 
     def remove_position(self, deal_id: str):
         """Remove a position from the positions dictionary."""
-        if deal_id in self.positions[self.get_trade_mode_for_deal_id(deal_id)]:
-            del self.positions[self.get_trade_mode_for_deal_id(deal_id)][deal_id]
+        mode = self.get_trade_mode_for_deal_id(deal_id)
+        if mode and deal_id in self.positions[mode]:
+            del self.positions[mode][deal_id]
 
 
     def update_deal_id(self, deal_id: str):
@@ -103,19 +111,29 @@ class Memory:
     
     def remove_trading_view_hooked_trades(self, epic: str, hook_name: str):
         """Remove a hooked trade for a specific epic and hook name."""
-        del self.hooked_trades[f"{epic}_{hook_name}"]
+        self.hooked_trades.pop(f"{epic}_{hook_name}", None)
+
     
     def get_trading_view_hooked_trade_side(self, epic: str, hook_name) -> TradeDirection:
         return self.hooked_trades.get(f"{epic}_{hook_name}", TradeDirection.NEUTRAL)
     
-        
-        
+
+    def positions_count(self) -> int:
+        """Get the count of current open positions."""
+        return len(self.positions[settings.TRADE_MODE.value])
     
-    
+    def positions_pnl(self) -> float:
+        """Get the total PnL of current open positions."""
+        return sum(float(pos["pnl"]) for pos in self.positions[settings.TRADE_MODE.value].values())
     
 
+    def recalibrate_trade(self) -> bool:
+        """Update PnL and check if recalibration trigger is met."""
+        pnl_total = int(self.positions_pnl())
+        return self.update_pnl(pnl_total)  # returns True if recalibration condition met
+
+    
+        
+        
+    
 memory = Memory()
-
-
-
-# {'hedgingMode': True, 'leverages': {'SHARES': {'current': 20, 'available': [1, 2, 3, 4, 5, 10, 20]}, 'CURRENCIES': {'current': 200, 'available': [1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 200]}, 'INDICES': {'current': 200, 'available': [1, 2, 3, 4, 5, 10, 20, 50, 100, 200]}, 'CRYPTOCURRENCIES': {'current': 20, 'available': [1, 2, 3, 4, 5, 10, 20]}, 'COMMODITIES': {'current': 200, 'available': [1, 2, 3, 4, 5, 10, 20, 50, 100, 200]}}}
