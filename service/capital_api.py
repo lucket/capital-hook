@@ -324,6 +324,48 @@ async def is_market_closed(epic: str, min: int = 2) -> bool:
         except Exception as e:
             await Logger.app_log(title="MARKET_HRS_ERR", message=f"{epic}: {str(e)}")
             return False
+     
+                     
+async def is_market_eod_close(epic: str, min: int = 2) -> bool:
+    try:
+        hours = memory.trading_hours.get(epic, {})
+        if not hours:
+            hours = memory.trading_hours[epic] = await get_epic_hours(epic)
+
+        now_utc = datetime.utcnow()
+        day_key = now_utc.strftime("%a").lower()
+        day_hours = hours.get(day_key, [])
+
+        # Market closed the whole day
+        if not day_hours:
+            return True
+
+        # Use only LAST trading range for today
+        start_str, end_str = day_hours[-1].split(" - ")
+
+        start_time_today = parse_time_str(start_str, now_utc)
+        end_time_today = parse_time_str(end_str, now_utc)
+
+        # Handle overnight session (e.g., 22:00 - 05:00 next day)
+        if end_time_today < start_time_today:
+            end_time_today += timedelta(days=1)
+
+        # Check if we're currently in that final session
+        if start_time_today <= now_utc < end_time_today:
+            time_remaining_minutes = (end_time_today - now_utc).total_seconds() / 60
+            return time_remaining_minutes <= min
+
+        # past the final session => market closed for day
+        if now_utc >= end_time_today:
+            return True
+
+        # market still widely open
+        return False
+
+    except Exception as e:
+        await Logger.app_log(title="MARKET_EOD_ERR", message=f"{epic}: {str(e)}")
+        return False
+
         
 
 async def is_market_eow_close(epic: str, min: int = 2) -> bool:
@@ -333,7 +375,7 @@ async def is_market_eow_close(epic: str, min: int = 2) -> bool:
             hours = memory.trading_hours[epic] = await get_epic_hours(epic)
 
         # find last trading window of the week
-        weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        weekdays = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
         last_day = None
         last_range = None
 
@@ -341,11 +383,10 @@ async def is_market_eow_close(epic: str, min: int = 2) -> bool:
             day_hours = hours.get(day, [])
             if day_hours:
                 last_day = day
-                last_range = day_hours[-1]  # assume ranges are sorted
+                last_range = day_hours[-1]
                 break
-
         if not last_range:
-            return False  # no trading hours at all for this epic
+            return False 
 
         now_utc = datetime.utcnow()
         start_str, end_str = last_range.split(" - ")
@@ -370,6 +411,7 @@ async def is_market_eow_close(epic: str, min: int = 2) -> bool:
                 time_remaining_minutes = (end_time - now_utc).total_seconds() / 60
                 return time_remaining_minutes <= min
 
+        print(last_day, last_range)
         return False
 
     except Exception as e:

@@ -1,7 +1,7 @@
 import asyncio
 from enums.trade import TradeDirection, ExitType
 from logger import Logger
-from service.capital_api import is_market_eow_close, open_trade, close_trade, is_market_closed
+from service.capital_api import is_market_eow_close, open_trade, close_trade, is_market_eod_close
 from datetime import datetime
 from database import insert_trade_history
 from enums.trade import TradeInstrument, TradeMode
@@ -141,7 +141,7 @@ class HookedTradeExecution:
             return True, profit_loss, percentage
         
         # market closed?
-        elif ExitType.EOD_CLOSE in self.exit_criteria and await is_market_closed(self.epic):
+        elif ExitType.EOD_CLOSE in self.exit_criteria and await is_market_eod_close(self.epic):
             await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
             self.exit_type = ExitType.EOD_CLOSE
             await self.log_trade("closed")
@@ -161,6 +161,13 @@ class HookedTradeExecution:
             await self.log_trade("closed")
             return True, profit_loss, percentage
 
+        # reclibrate
+        elif ExitType.RECALIBRATE in self.exit_criteria and memory.recalibrate_trade():
+            await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
+            self.exit_type = ExitType.RECALIBRATE
+            await self.log_trade("closed")
+            return True, profit_loss, percentage
+        
         # manual exit
         elif memory.manual_trade_exit_signal(self.deal_id):
             await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
@@ -169,12 +176,6 @@ class HookedTradeExecution:
             return True, profit_loss, percentage
         
 
-        # reclibrate
-        elif memory.positions_pnl() >= memory.recalibrate_pnl:
-            await close_trade(epic=self.epic, size=self.trade_size, deal_id=self.deal_id, position_mode=self.position_mode)
-            self.exit_type = ExitType.RECALIBRATE
-            await self.log_trade("closed")
-            return True, profit_loss, percentage
 
         
         else:
