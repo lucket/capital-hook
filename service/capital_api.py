@@ -160,6 +160,9 @@ async def close_trade(epic: str, size: float, deal_id: str, position_mode: Trade
             memory.remove_deal_id(deal_id)  # Remove deal ID from settings
             return data.get("dealReference", False)
         
+        from database import delete_position
+        await delete_position(deal_id) # remove position from DB if already closed
+
         raise ValueError(f"Failed to close trade: {response.status_code} => {response.text}")
     
     except Exception as e:
@@ -411,7 +414,6 @@ async def is_market_eow_close(epic: str, min: int = 2) -> bool:
                 time_remaining_minutes = (end_time - now_utc).total_seconds() / 60
                 return time_remaining_minutes <= min
 
-        print(last_day, last_range)
         return False
 
     except Exception as e:

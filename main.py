@@ -32,6 +32,9 @@ async def startup_event():
     
     # initialize jobs
     await jobs.run()
+
+    # resume trades
+    await jobs.resume_trades()
     
     
 @app.on_event("shutdown")

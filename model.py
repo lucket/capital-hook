@@ -30,3 +30,18 @@ class HookPayloadModel(BaseModel):
 
 class TradeModeModel(BaseModel):
     mode: TradeMode
+
+
+
+class PositionsModel(BaseModel):
+    id: str
+    epic: str
+    size: float
+    hook_name: str
+    direction: TradeDirection
+    entry_price: float
+    entry_date: str
+    exit_criteria: List[ExitType]
+    profit_price: float
+    loss_price: float
+    mode: TradeMode

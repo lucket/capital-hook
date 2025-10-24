@@ -26,8 +26,38 @@ class Jobs:
         scheduler.start()
         for job in scheduler.get_jobs():
             print("Next Job: ", job.next_run_time)
-            
-            
 
+
+    async def resume_trades(self):
+        from database import get_positions, delete_position
+        from service.capital_api import get_open_positions
+        from model import PositionsModel
+        from resume_trade import ResumeTradeExecution
+        import asyncio
+
+        deal_ids = [pos['deal_id'] for pos in await get_open_positions()]
+        
+        positions: list[PositionsModel] = await get_positions()
+            
+        for position in positions:
+            if position.id in deal_ids:
+                resume_trade = ResumeTradeExecution(
+                    epic=position.epic,
+                    size=position.size,
+                    deal_id=position.id,
+                    entry_price=position.entry_price,
+                    entry_date=position.entry_date,
+                    trade_direction=position.direction,
+                    profit_price=position.profit_price,
+                    loss_price=position.loss_price,
+                    hook_name=position.hook_name,
+                    exit_criteria=position.exit_criteria
+                )
+                print(f"Resuming {position.epic} {position.direction.value} trade on [{position.hook_name}]")
+                asyncio.create_task(resume_trade.execute_trade())
+                await asyncio.sleep(2) # slight delay to avoid overload
+            else:
+                print(f"Position {position.id} no longer active. Deleting from DB.")
+                await delete_position(position.id)
 
 jobs = Jobs()
