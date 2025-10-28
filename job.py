@@ -30,7 +30,7 @@ class Jobs:
 
     async def resume_trades(self):
         from database import get_positions, delete_position
-        from service.capital_api import get_open_positions
+        from service.capital_api import get_open_positions, memory
         from model import PositionsModel
         from resume_trade import ResumeTradeExecution
         import asyncio
@@ -56,6 +56,7 @@ class Jobs:
                 print(f"Resuming {position.epic} {position.direction.value} trade on [{position.hook_name}]")
                 asyncio.create_task(resume_trade.execute_trade())
                 await asyncio.sleep(2) # slight delay to avoid overload
+                memory.update_trading_view_hooked_trades(epic=position.epic, direction=position.direction, hook_name=position.hook_name)
             else:
                 print(f"Position {position.id} no longer active. Deleting from DB.")
                 await delete_position(position.id)
