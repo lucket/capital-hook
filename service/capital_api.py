@@ -146,7 +146,8 @@ async def open_trade(epic: str, size: float, trade_direction: TradeDirection):
 
 async def close_trade(epic: str, size: float, deal_id: str, position_mode: TradeMode, retry: int = 0) -> bool:
     try:
-        # Use PUT to close specific position
+        from database import delete_position
+        
         response = await settings.session.delete(
             f"{settings.get_capital_host(position_mode)}/api/v1/positions/{deal_id}",
             headers= memory.capital_auth_header,
@@ -158,10 +159,10 @@ async def close_trade(epic: str, size: float, deal_id: str, position_mode: Trade
                 message=f"Closed {size} of {epic}: {data}"
             )
             memory.remove_deal_id(deal_id)  # Remove deal ID from settings
+            await delete_position(deal_id) # remove position from DB if already closed
+
             return data.get("dealReference", False)
         
-        from database import delete_position
-        await delete_position(deal_id) # remove position from DB if already closed
 
         raise ValueError(f"Failed to close trade: {response.status_code} => {response.text}")
     
