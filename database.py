@@ -83,7 +83,7 @@ async def get_trade_history(mode: TradeMode = None ) -> list:
     mode = settings.TRADE_MODE if not mode else mode
     trades = []
     profits = 0
-    loasses = 0
+    losses = 0
     spreads = 0
     pnl = 0.0
     async with aiosqlite.connect(settings.DB_PATH) as db:
@@ -98,7 +98,7 @@ async def get_trade_history(mode: TradeMode = None ) -> list:
                 if pnl > 0:
                     profits += pnl
                 elif pnl < 0:
-                    loasses += abs(pnl)
+                    losses += abs(pnl)
                 spreads += abs(exit_price - entry_price) * (size / memory.get_leverage(epic))  # assuming spread is calculated as the difference between exit and entry price times size
                 trade = {
                     "id": id,
@@ -117,11 +117,11 @@ async def get_trade_history(mode: TradeMode = None ) -> list:
                 }
                 trades.append(trade)
             
-            pnl = profits - loasses - spreads
+            pnl = profits - losses - spreads
             return {
                 "trades": trades,
                 "profits": f"+{profits:,.2f}",
-                "loasses": f"-{loasses:,.2f}",
+                "losses": f"-{losses:,.2f}",
                 "spreads": f"-{spreads:,.2f}",
                 "pnl": f"{pnl:,.2f}",
                 "count": len(trades)
