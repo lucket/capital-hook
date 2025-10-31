@@ -11,6 +11,7 @@ async def migrate_db() -> None:
     from memory import settings
     async with aiosqlite.connect(settings.DB_PATH) as db:
         async with db.cursor() as cursor:
+            
             # trades table
             await cursor.execute("""
                 CREATE TABLE IF NOT EXISTS trades (
@@ -30,15 +31,20 @@ async def migrate_db() -> None:
                 )
             """)
             
-            # failed hooks table
+            # positions table
             await cursor.execute("""
-                CREATE TABLE IF NOT EXISTS failed_hooks (
+                CREATE TABLE IF NOT EXISTS positions (
                     id TEXT PRIMARY KEY,
                     epic TEXT NOT NULL,
+                    size TEXT NOT NULL,
                     hook_name TEXT NOT NULL,
                     direction TEXT NOT NULL,
-                    error_message TEXT NOT NULL,
-                    created_at TEXT NOT NULL
+                    entry_price TEXT NOT NULL,
+                    entry_date TEXT NOT NULL,
+                    exit_criteria TEXT NOT NULL,
+                    profit_price REAL NOT NULL,
+                    loss_price REAL NOT NULL,
+                    mode TEXT NOT NULL
                 )
             """)
             
@@ -57,7 +63,7 @@ async def migrate_db() -> None:
         
         
         
-async def insert_trade_history(trade_id: str, epic: str, size: float, pnl: float, pnl_percentage: float, direction: str, exit_type: str, hook_name: str, entry_price: float, exit_price: float, opened_at: str, closed_at: str, mode: TradeMode) -> None:
+async def save_trade_history(trade_id: str, epic: str, size: float, pnl: float, pnl_percentage: float, direction: str, exit_type: str, hook_name: str, entry_price: float, exit_price: float, opened_at: str, closed_at: str, mode: TradeMode) -> None:
     from memory import settings
     async with aiosqlite.connect(settings.DB_PATH) as db:
         async with db.cursor() as cursor:
@@ -77,7 +83,7 @@ async def get_trade_history(mode: TradeMode = None ) -> list:
     mode = settings.TRADE_MODE if not mode else mode
     trades = []
     profits = 0
-    loasses = 0
+    losses = 0
     spreads = 0
     pnl = 0.0
     async with aiosqlite.connect(settings.DB_PATH) as db:
@@ -92,7 +98,7 @@ async def get_trade_history(mode: TradeMode = None ) -> list:
                 if pnl > 0:
                     profits += pnl
                 elif pnl < 0:
-                    loasses += abs(pnl)
+                    losses += abs(pnl)
                 spreads += abs(exit_price - entry_price) * (size / memory.get_leverage(epic))  # assuming spread is calculated as the difference between exit and entry price times size
                 trade = {
                     "id": id,
@@ -111,11 +117,11 @@ async def get_trade_history(mode: TradeMode = None ) -> list:
                 }
                 trades.append(trade)
             
-            pnl = profits - loasses - spreads
+            pnl = profits - losses - spreads
             return {
                 "trades": trades,
                 "profits": f"+{profits:,.2f}",
-                "loasses": f"-{loasses:,.2f}",
+                "losses": f"-{losses:,.2f}",
                 "spreads": f"-{spreads:,.2f}",
                 "pnl": f"{pnl:,.2f}",
                 "count": len(trades)
@@ -148,6 +154,7 @@ async def update_trade_mode_db(mode: TradeMode) -> None:
                 )
         await db.commit()
 
+
 async def get_trade_mode() -> TradeMode:
     from memory import settings
     async with aiosqlite.connect(settings.DB_PATH) as db:
@@ -160,20 +167,66 @@ async def get_trade_mode() -> TradeMode:
                 return TradeMode(row[0])
             else:
                 return TradeMode.DEMO
+            
 
 
-async def save_failed_hooks(hook_id: str, epic: str, hook_name: str, direction: str, error_message: str, created_at: str) -> None:
+async def get_positions() -> list:
+    from memory import settings
+    from enums.trade import ExitType
+    from model import PositionsModel
+    positions = []
+    async with aiosqlite.connect(settings.DB_PATH) as db:
+        async with db.cursor() as cursor:
+            await cursor.execute(
+                "SELECT * FROM positions ORDER BY entry_date DESC"
+            )
+            rows = await cursor.fetchall()
+            for row in rows:
+                id, epic, size, hook_name, direction, entry_price, entry_date, exit_criteria, profit_price, loss_price, mode = row
+                position = {
+                    "id": id,
+                    "epic": epic,
+                    "size": float(size),
+                    "hook_name": hook_name,
+                    "direction": direction,
+                    "entry_price": entry_price,
+                    "entry_date": entry_date,
+                    "exit_criteria": [ExitType(e.strip()) for e in exit_criteria.split(",")],
+                    "profit_price": profit_price,
+                    "loss_price": loss_price,
+                    "mode": mode
+                }
+                positions.append(PositionsModel(**position))
+    return positions
+
+
+async def save_position(id: str, epic: str, size: float, hook_name: str, direction: str, entry_price: float, entry_date: str, exit_criteria: str, profit_price: float, loss_price: float, mode: TradeMode) -> None:
     from memory import settings
     async with aiosqlite.connect(settings.DB_PATH) as db:
         async with db.cursor() as cursor:
             await cursor.execute(
-            """
-            INSERT INTO failed_hooks (id, epic, hook_name, direction, error_message, created_at)
-            VALUES (?,?,?,?,?,?)
-            """, (
-                hook_id, epic, hook_name, direction, error_message, created_at
-            ))
+                """
+                INSERT INTO positions (id, epic, size, hook_name, direction, entry_price, entry_date, exit_criteria, profit_price, loss_price, mode)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """, (
+                    id, epic, size, hook_name, direction, entry_price, entry_date, exit_criteria, profit_price, loss_price, mode.value
+                ))
         await db.commit()
+
+
+
+async def delete_position(position_id: str) -> None:
+    from memory import settings
+    async with aiosqlite.connect(settings.DB_PATH) as db:
+        async with db.cursor() as cursor:
+            await cursor.execute(
+                """
+                DELETE FROM positions WHERE id = ?
+                """, (
+                    position_id,
+                ))
+        await db.commit()
+
 
 
 async def clear_config() -> None:

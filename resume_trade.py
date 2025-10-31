@@ -3,25 +3,20 @@ from enums.trade import TradeDirection, ExitType
 from logger import Logger
 from service.capital_api import is_market_eow_close, open_trade, close_trade, is_market_eod_close
 from datetime import datetime
-from database import save_trade_history, save_position
+from database import save_trade_history
 from enums.trade import TradeInstrument, TradeMode
 from service.socket_manager import socket_manager, memory
 from utils import round_trade_size
 from typing import List
 
-class HookedTradeExecution:
+class ResumeTradeExecution:
     trade_direction: TradeDirection
     epic: str
-    trade_amount: int
     hook_name: str
-    profit: int
-    loss: int
     deal_id: str
-    leverage: int
     entry_price: float
     exit_price: float
     trade_size: float
-    trade_instrument: TradeInstrument
     exit_criteria: List[ExitType]
     stop_loss_price: float
     target_profit_price: float
@@ -30,20 +25,20 @@ class HookedTradeExecution:
     position_mode: TradeMode
     profit_loss: float
     percentage: float
-    
-    
-    def __init__(self, trade_direction: TradeDirection, epic: str, trade_amount: int, profit: int, loss: int, hook_name: str, exit_criteria: List[ExitType]):
+
+
+    def __init__(self, epic: str, size: float, deal_id: str, entry_price: float, entry_date: str, trade_direction: TradeDirection, profit_price: int, loss_price: int, hook_name: str, exit_criteria: List[ExitType]):
         from settings import settings
         self.trade_direction = trade_direction
         self.epic = epic
-        self.trade_amount = trade_amount
+        self.trade_size = size
         self.hook_name = hook_name
-        self.profit = profit
-        self.loss = loss
-        self.deal_id = None
+        self.entry_price = entry_price
+        self.target_profit_price = profit_price
+        self.stop_loss_price = loss_price
+        self.deal_id = deal_id
         self.exit_criteria = exit_criteria
-        self.leverage = memory.get_leverage(epic)
-        self.trade_instrument = memory.get_trade_instrument(epic)
+        self.opened_trade_at = datetime.strptime(entry_date, "%d %b %H:%M")
         self.position_mode = settings.TRADE_MODE
         
     
@@ -55,40 +50,6 @@ class HookedTradeExecution:
         
     async def sleep_time(self) -> None:
         await asyncio.sleep(1.12)
-            
-    def __set_trade_size(self):
-        self.capital_size = float(self.trade_amount)
-        leverage_size = self.capital_size * memory.get_leverage(self.epic)
-        self.trade_size = float(leverage_size / self.entry_price)
-        if self.trade_instrument == TradeInstrument.CURRENCIES:
-            self.trade_size = max(100, round(self.trade_size, -2))
-        elif self.trade_instrument == TradeInstrument.SHARES:
-            self.trade_size = round(self.trade_size)
-        elif self.trade_instrument == TradeInstrument.COMMODITIES:
-            self.trade_size = round(self.trade_size, 1)
-        elif self.trade_instrument == TradeInstrument.INDICES:
-            self.trade_size = TradeInstrument(self.trade_size) if self.trade_size > 2 else float(f"{self.trade_size:.2f}")
-        else:
-            self.trade_size = float(f"{self.trade_size:.2g}") if self.trade_size < 1 else round_trade_size(self.trade_size) if self.trade_size > 2 else float(f"{self.trade_size:.2f}")
-        return leverage_size
-            
-    async def __risk_reward_setup(self):
-        ask, bid =  memory.get_current_price(self.epic)
-        self.entry_price = float(ask) if self.trade_direction == TradeDirection.BUY else float(bid)
-        reward, risk =  self.profit, self.loss
-        leverage_size = self.__set_trade_size()
-        
-        # Price movement for loss and profit
-        loss_price_move = risk / self.trade_size
-        profit_price_move = reward / self.trade_size
-        
-        # Set stop-loss and target-profit
-        if self.trade_direction == TradeDirection.BUY:
-            self.stop_loss_price = float(self.entry_price - loss_price_move)
-            self.target_profit_price = float(self.entry_price + profit_price_move)
-        elif self.trade_direction == TradeDirection.SELL:
-            self.stop_loss_price = float(self.entry_price + loss_price_move)
-            self.target_profit_price = float(self.entry_price - profit_price_move)
             
     def __calculate_profit_loss(self, current_price: float) -> tuple:
         if self.trade_direction == TradeDirection.BUY:
@@ -174,7 +135,8 @@ class HookedTradeExecution:
             self.exit_type = ExitType.USER
             await self.log_trade("closed")
             return True, profit_loss, percentage
-     
+        
+        
         else:
             self.profit_loss = profit_loss
             self.percentage = percentage
@@ -185,24 +147,10 @@ class HookedTradeExecution:
     async def execute_trade(self):
         try:
             await socket_manager.subscribe(self.epic)
-            
-            # set risk reward
-            await self.__risk_reward_setup()
-            
-            # open position
-            self.deal_id = await open_trade(epic=self.epic, size=self.trade_size, trade_direction=self.trade_direction)
-            if not self.deal_id:
-                raise Exception("Market Closed")
-            
-            await self.log_trade("opened")
-            self.opened_trade_at = datetime.now()
-            
-            # save position
-            await save_position(id=self.deal_id, epic=self.epic, size=self.trade_size, hook_name=self.hook_name, direction=self.trade_direction.value, entry_price=self.entry_price, entry_date=self.opened_trade_at.strftime("%d %b %H:%M"), exit_criteria=",".join([e.value for e in self.exit_criteria]), profit_price=self.target_profit_price, loss_price=self.stop_loss_price, mode=self.position_mode)
                 
             # monitor trade
             while True:
-                status, profit_loss , percentage = await self.__monitor_position()
+                status, profit_loss, percentage = await self.__monitor_position()
                 
                 if status:
                     await save_trade_history(trade_id=self.deal_id, epic=self.epic, size=self.trade_size, pnl=profit_loss, pnl_percentage=percentage, direction=self.trade_direction.value, exit_type=self.exit_type.value, hook_name=self.hook_name.upper(), entry_price=self.entry_price, exit_price=self.exit_price, opened_at=self.opened_trade_at.strftime("%Y-%m-%d %H:%M:%S"), closed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), mode=self.position_mode)

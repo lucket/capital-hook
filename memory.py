@@ -62,6 +62,12 @@ class Memory(TrailRecalibration):
         if mode and deal_id in self.positions[mode]:
             del self.positions[mode][deal_id]
 
+    
+    def has_epic_in_positions(self, epic: str) -> bool:
+        """Check if any position exists for a given epic."""
+        mode = settings.TRADE_MODE.value
+        return any(pos["epic"] == epic for pos in self.positions[mode].values())
+
 
     def update_deal_id(self, deal_id: str):
         """Add a deal_id to the set of deal_ids."""
