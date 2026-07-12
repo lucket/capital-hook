@@ -6,17 +6,21 @@
     </thead>
     <tbody>
       {% for x in mappings %}
-      <tr>
+      <tr{% if x.locked %} class="env-row"{% endif %}>
         <td>{{ x.source_provider_id }}</td>
         <td>{{ x.source_ticker }}</td>
         <td>{{ x.target_provider_id }}</td>
         <td>{{ x.target_ticker }}</td>
         <td>
+          {% if x.locked %}
+          <span class="lock" title="From TICKER_CONFIG environment (read-only, wins over DB)">&#128274;</span>
+          {% else %}
           <button type="button" class="del-btn"
             hx-post="/mapping/link/delete" hx-ext="json-enc"
             hx-vals='{"source_provider_id": "{{ x.source_provider_id }}", "source_ticker": "{{ x.source_ticker }}", "target_provider_id": "{{ x.target_provider_id }}"}'
             hx-target="#mappings-section" hx-swap="outerHTML"
             hx-confirm="Delete mapping {{ x.source_provider_id }}:{{ x.source_ticker }} -> {{ x.target_provider_id }}?">&times;</button>
+          {% endif %}
         </td>
       </tr>
       {% else %}

@@ -5,6 +5,7 @@ section fragment so the table refreshes in place. Ticker pickers in the mapping
 form are datalists populated by searching the `ticker` table.
 """
 from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse
 from starlette.templating import Jinja2Templates
 
 import ticker_map as tm
@@ -14,7 +15,18 @@ templates = Jinja2Templates(directory="views")
 
 
 def _frag(name: str, request: Request, **ctx):
-    return templates.TemplateResponse(f"components/mapping/{name}", {"request": request, **ctx})
+    return templates.TemplateResponse(request, f"components/mapping/{name}", {"request": request, **ctx})
+
+
+async def _sections_frag(request):
+    """Re-render all four sections together (used by the env reload)."""
+    return _frag(
+        "sections.html", request,
+        providers=await tm.list_providers(),
+        markets=await tm.list_markets(),
+        tickers=await tm.list_tickers(),
+        mappings=await tm.list_mappings(),
+    )
 
 
 async def _providers_frag(request):
@@ -36,14 +48,28 @@ async def _mappings_frag(request):
 @mapping.get("/mapping", tags=["Mapping"])
 async def mapping_page(request: Request):
     from memory import settings
-    return templates.TemplateResponse("pages/mapping.html", {
+    return templates.TemplateResponse(request, "pages/mapping.html", {
         "request": request,
         "providers": await tm.list_providers(),
         "markets": await tm.list_markets(),
         "tickers": await tm.list_tickers(),
         "mappings": await tm.list_mappings(),
+        "env_count": len(tm._env_index),
         "mode": settings.TRADE_MODE.value,
     })
+
+
+@mapping.api_route("/mapping/reload-env", methods=["GET", "POST"], tags=["Mapping"])
+async def reload_env(request: Request):
+    """Re-read TICKER_CONFIG from the environment (and .env) without a restart.
+
+    POST (htmx button) returns the re-rendered sections; GET (plain link)
+    reloads and redirects back to the Mapping page.
+    """
+    await tm.load_env_mappings(reload_dotenv=True)
+    if request.method == "GET":
+        return RedirectResponse("/mapping", status_code=303)
+    return await _sections_frag(request)
 
 
 # --- providers ---
