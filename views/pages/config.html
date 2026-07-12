@@ -27,6 +27,20 @@
             </select>
           </div>
           <div class="form-group">
+            <label for="symbolMode">symbol by</label>
+            <select id="symbolMode" name="symbol_mode"
+              onchange="document.getElementById('sourceGroup').style.display = this.value === 'ticker' ? '' : 'none';">
+              <option value="epic">epic (direct)</option>
+              <option value="ticker">ticker (mapped)</option>
+            </select>
+          </div>
+          <div class="form-group" id="sourceGroup" style="display:none">
+            <label for="source">source provider</label>
+            <select id="source" name="source">
+              {% for p in providers %}<option value="{{ p.id }}"{% if p.id == 'TV' %} selected{% endif %}>{{ p.id }} &mdash; {{ p.name }}</option>{% else %}<option value="TV">TV</option>{% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
             <label for="tradeAmount">Trade Amount</label>
             <input type="number" step="any" id="tradeAmount" name="trade_amount" required />
           </div>

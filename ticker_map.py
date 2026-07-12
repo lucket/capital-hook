@@ -123,6 +123,96 @@ async def export_config() -> dict:
     return {"providers": providers, "markets": markets, "tickers": tickers, "mappings": mappings}
 
 
+# ---------------------------------------------------------------------------
+# CRUD helpers (used by the mapping management UI)
+# ---------------------------------------------------------------------------
+
+async def _run(query: str, params: tuple = (), *, fetch: str = None):
+    from memory import settings
+    async with aiosqlite.connect(settings.DB_PATH) as db:
+        async with db.cursor() as cursor:
+            await cursor.execute(query, params)
+            if fetch == "all":
+                rows = await cursor.fetchall()
+        await db.commit()
+    return rows if fetch == "all" else None
+
+
+async def list_providers() -> list:
+    rows = await _run("SELECT id, name FROM provider ORDER BY id", fetch="all")
+    return [{"id": r[0], "name": r[1]} for r in rows]
+
+
+async def add_provider(id: str, name: str) -> None:
+    await _run("INSERT OR REPLACE INTO provider (id, name) VALUES (?, ?)", (id, name or id))
+
+
+async def delete_provider(id: str) -> None:
+    await _run("DELETE FROM provider WHERE id = ?", (id,))
+
+
+async def list_markets() -> list:
+    rows = await _run("SELECT provider_id, market_id, description FROM markets ORDER BY provider_id, market_id", fetch="all")
+    return [{"provider_id": r[0], "market_id": r[1], "description": r[2]} for r in rows]
+
+
+async def add_market(provider_id: str, market_id: str, description: str = None) -> None:
+    await _run("INSERT OR REPLACE INTO markets (provider_id, market_id, description) VALUES (?, ?, ?)", (provider_id, market_id, description))
+
+
+async def delete_market(provider_id: str, market_id: str) -> None:
+    await _run("DELETE FROM markets WHERE provider_id = ? AND market_id = ?", (provider_id, market_id))
+
+
+async def list_tickers(provider_id: str = None, q: str = None) -> list:
+    query = "SELECT provider_id, ticker, description, market_id FROM ticker"
+    clauses, params = [], []
+    if provider_id:
+        clauses.append("provider_id = ?"); params.append(provider_id)
+    if q:
+        clauses.append("ticker LIKE ? COLLATE NOCASE"); params.append(f"%{q}%")
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY provider_id, ticker LIMIT 50"
+    rows = await _run(query, tuple(params), fetch="all")
+    return [{"provider_id": r[0], "ticker": r[1], "description": r[2], "market_id": r[3]} for r in rows]
+
+
+async def add_ticker(provider_id: str, ticker: str, description: str = None, market_id: str = None) -> None:
+    await _run(
+        "INSERT OR REPLACE INTO ticker (provider_id, ticker, description, market_id) VALUES (?, ?, ?, ?)",
+        (provider_id, ticker, description, market_id),
+    )
+
+
+async def delete_ticker(provider_id: str, ticker: str) -> None:
+    await _run("DELETE FROM ticker WHERE provider_id = ? AND ticker = ?", (provider_id, ticker))
+
+
+async def list_mappings() -> list:
+    rows = await _run(
+        "SELECT source_provider_id, source_ticker, target_provider_id, target_ticker FROM ticker_mapping "
+        "ORDER BY source_provider_id, source_ticker, target_provider_id",
+        fetch="all",
+    )
+    return [{"source_provider_id": r[0], "source_ticker": r[1], "target_provider_id": r[2], "target_ticker": r[3]} for r in rows]
+
+
+async def add_mapping(source_provider_id: str, source_ticker: str, target_provider_id: str, target_ticker: str) -> None:
+    await _run(
+        """INSERT OR REPLACE INTO ticker_mapping
+           (source_provider_id, source_ticker, target_provider_id, target_ticker) VALUES (?, ?, ?, ?)""",
+        (source_provider_id, source_ticker, target_provider_id, target_ticker),
+    )
+
+
+async def delete_mapping(source_provider_id: str, source_ticker: str, target_provider_id: str) -> None:
+    await _run(
+        "DELETE FROM ticker_mapping WHERE source_provider_id = ? AND source_ticker = ? AND target_provider_id = ?",
+        (source_provider_id, source_ticker, target_provider_id),
+    )
+
+
 async def resolve_epic(source_provider_id: str, source_ticker: str, target_provider_id: str) -> str | None:
     """Return the executing-provider ticker (epic) for a source ticker, or None.
 

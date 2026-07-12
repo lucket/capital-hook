@@ -8,6 +8,7 @@ from routes.api import api
 from routes.auth import auth
 from routes.webhook import webhook
 from routes.view import view
+from routes.mapping import mapping
 from memory import memory, settings
 from service.capital_api import get_account_preferences, update_markets, update_auth_header
 from auth import is_authenticated
@@ -92,6 +93,7 @@ async def auth_guard(request: Request, call_next):
 
 app.include_router(auth, tags=["Auth"])
 app.include_router(view, tags=["View"])
+app.include_router(mapping, tags=["Mapping"])
 app.include_router(api, prefix="/api", tags=["API"])
 app.include_router(webhook, prefix="/webhook", tags=["Webhook"])
 

@@ -101,8 +101,14 @@ async def generate_payload(data: HookPayloadModel):
         'end_of_week_close_exit': ExitType.EOW_CLOSE.value
     }
 
+    # Identify the instrument by epic (direct) or ticker (mapped via source).
+    if data.symbol_mode == 'ticker':
+        symbol = {"ticker": "{{ticker}}", "source": (data.source or "TV")}
+    else:
+        symbol = {"epic": "{{ticker}}"}
+
     payload = {
-        "epic": "{{ticker}}",
+        **symbol,
         "direction": data.direction.value,
         "amount": data.trade_amount,
         "amount_type": data.amount_type.value,

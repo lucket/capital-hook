@@ -1,0 +1,31 @@
+<div id="providers-section" class="mapping-section">
+  <h2>Providers</h2>
+  <table class="mapping-table">
+    <thead>
+      <tr><th>Code</th><th>Name</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for p in providers %}
+      <tr>
+        <td>{{ p.id }}</td>
+        <td>{{ p.name }}</td>
+        <td>
+          <button type="button" class="del-btn"
+            hx-post="/mapping/provider/delete" hx-ext="json-enc"
+            hx-vals='{"id": "{{ p.id }}"}'
+            hx-target="#providers-section" hx-swap="outerHTML"
+            hx-confirm="Delete provider {{ p.id }}?">&times;</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" style="text-align:center">No providers</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form class="mapping-add" hx-post="/mapping/provider" hx-ext="json-enc"
+        hx-target="#providers-section" hx-swap="outerHTML">
+    <input name="id" placeholder="Code (e.g. TV)" required />
+    <input name="name" placeholder="Name" />
+    <button type="submit">Add</button>
+  </form>
+</div>

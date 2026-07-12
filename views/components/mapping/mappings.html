@@ -1,0 +1,51 @@
+<div id="mappings-section" class="mapping-section">
+  <h2>Ticker Mappings</h2>
+  <table class="mapping-table">
+    <thead>
+      <tr><th>Source</th><th>Source Ticker</th><th>Target</th><th>Target Ticker (epic)</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for x in mappings %}
+      <tr>
+        <td>{{ x.source_provider_id }}</td>
+        <td>{{ x.source_ticker }}</td>
+        <td>{{ x.target_provider_id }}</td>
+        <td>{{ x.target_ticker }}</td>
+        <td>
+          <button type="button" class="del-btn"
+            hx-post="/mapping/link/delete" hx-ext="json-enc"
+            hx-vals='{"source_provider_id": "{{ x.source_provider_id }}", "source_ticker": "{{ x.source_ticker }}", "target_provider_id": "{{ x.target_provider_id }}"}'
+            hx-target="#mappings-section" hx-swap="outerHTML"
+            hx-confirm="Delete mapping {{ x.source_provider_id }}:{{ x.source_ticker }} -> {{ x.target_provider_id }}?">&times;</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" style="text-align:center">No mappings</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form class="mapping-add mapping-add-wide" hx-post="/mapping/link" hx-ext="json-enc"
+        hx-target="#mappings-section" hx-swap="outerHTML">
+    <select name="source_provider_id" required
+      hx-get="/mapping/search/tickers" hx-include="this"
+      hx-trigger="change" hx-target="#source-ticker-list" hx-swap="innerHTML">
+      <option value="" disabled selected>source</option>
+      {% for p in providers %}<option value="{{ p.id }}">{{ p.id }}</option>{% endfor %}
+    </select>
+    <input name="source_ticker" list="source-ticker-list" placeholder="source ticker" required autocomplete="off" />
+    <datalist id="source-ticker-list"></datalist>
+
+    <span class="arrow">&rarr;</span>
+
+    <select name="target_provider_id" required
+      hx-get="/mapping/search/tickers" hx-include="this"
+      hx-trigger="change" hx-target="#target-ticker-list" hx-swap="innerHTML">
+      <option value="" disabled selected>target</option>
+      {% for p in providers %}<option value="{{ p.id }}"{% if p.id == 'C' %} selected{% endif %}>{{ p.id }}</option>{% endfor %}
+    </select>
+    <input name="target_ticker" list="target-ticker-list" placeholder="target ticker (epic)" required autocomplete="off" />
+    <datalist id="target-ticker-list"></datalist>
+
+    <button type="submit">Add</button>
+  </form>
+</div>

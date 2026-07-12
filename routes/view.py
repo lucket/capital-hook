@@ -127,7 +127,8 @@ async def trade_history_view(request: Request) -> _TemplateResponse:
 
 @view.get("/config", tags=["Config"])
 async def dashboard_view(request: Request) -> _TemplateResponse:
+    from ticker_map import list_providers
     data = {
         "positions": {}
     }
-    return templates.TemplateResponse("pages/config.html", {"request": request, "data": data, "mode": settings.TRADE_MODE.value})
+    return templates.TemplateResponse("pages/config.html", {"request": request, "data": data, "mode": settings.TRADE_MODE.value, "providers": await list_providers()})

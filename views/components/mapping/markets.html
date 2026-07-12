@@ -1,0 +1,35 @@
+<div id="markets-section" class="mapping-section">
+  <h2>Markets</h2>
+  <table class="mapping-table">
+    <thead>
+      <tr><th>Provider</th><th>Market ID</th><th>Description</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for m in markets %}
+      <tr>
+        <td>{{ m.provider_id }}</td>
+        <td>{{ m.market_id }}</td>
+        <td>{{ m.description or '' }}</td>
+        <td>
+          <button type="button" class="del-btn"
+            hx-post="/mapping/market/delete" hx-ext="json-enc"
+            hx-vals='{"provider_id": "{{ m.provider_id }}", "market_id": "{{ m.market_id }}"}'
+            hx-target="#markets-section" hx-swap="outerHTML"
+            hx-confirm="Delete market {{ m.provider_id }}:{{ m.market_id }}?">&times;</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" style="text-align:center">No markets</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form class="mapping-add" hx-post="/mapping/market" hx-ext="json-enc"
+        hx-target="#markets-section" hx-swap="outerHTML">
+    <select name="provider_id" required>
+      {% for p in providers %}<option value="{{ p.id }}">{{ p.id }}</option>{% endfor %}
+    </select>
+    <input name="market_id" placeholder="Market ID" required />
+    <input name="description" placeholder="Description" />
+    <button type="submit">Add</button>
+  </form>
+</div>
