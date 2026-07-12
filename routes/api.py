@@ -105,6 +105,7 @@ async def generate_payload(data: HookPayloadModel):
         "epic": "{{ticker}}",
         "direction": data.direction.value,
         "amount": data.trade_amount,
+        "amount_type": data.amount_type.value,
         "hook_name": data.hook_name.upper(),
         "profit": data.take_profit,
         "loss": data.stop_loss,

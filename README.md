@@ -167,6 +167,7 @@ To automate your trades, you need to set up alerts in TradingView that send data
         "epic": "{{ticker}}",
         "direction": "SELL",
         "amount": 100.0,
+        "amount_type": "FIXED",
         "hook_name": "20/200EMA",
         "profit": 120.0,
         "loss": 50.0,
@@ -177,7 +178,10 @@ To automate your trades, you need to set up alerts in TradingView that send data
         **Payload Field Reference:**
         - **`epic`**: TradingView placeholder for the instrument symbol (e.g., `EURUSD`, `AAPL`).
         - **`direction`**: Trade direction, either `"BUY"` or `"SELL"`.
-        - **`amount`**: Trade size, specified in the currency or units set for your Capital.com account (e.g., USD, EUR, GBP, etc.).       
+        - **`amount`**: Position sizing input. Its meaning depends on `amount_type` (see below).
+        - **`amount_type`** *(optional, default `"FIXED"`)*: How `amount` is interpreted.
+            - `"FIXED"` — `amount` is a fixed cash figure in your account currency (must be ≥ 5). This is the original behavior.
+            - `"PERCENT"` — `amount` is a **percentage of total account value** (equity), within `(0, 100]`. The cash committed is resolved live when the trade opens: e.g. `amount: 2.5` risks 2.5%, `5` risks 5%, `10` risks 10% of the current account value. If the account balance can't be read, the trade is skipped.
         - **`hook_name`**: Custom identifier for the strategy or alert.
         - **`profit`**: Take Profit value.
         - **`loss`**: Stop Loss value.

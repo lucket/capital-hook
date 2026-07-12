@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field
-from enums.trade import TradeDirection, ExitType, TradeMode
+from pydantic import BaseModel, Field, model_validator
+from enums.trade import TradeDirection, ExitType, TradeMode, AmountType
 from typing import Annotated
 from typing import Literal, List, Optional
 
@@ -7,18 +7,30 @@ from typing import Literal, List, Optional
 class TradingViewWebhookModel(BaseModel):
     epic: str
     direction: TradeDirection
-    amount: Annotated[int, Field(ge=5)]
+    amount: Annotated[float, Field(gt=0)]
+    amount_type: AmountType = AmountType.FIXED
     hook_name: str
     profit: Annotated[int, Field(ge=5)]
     loss: Annotated[int, Field(ge=5)]
     exit_criteria: List[ExitType]
+
+    @model_validator(mode="after")
+    def _validate_amount(self):
+        # FIXED: at least 5 units of account currency.
+        # PERCENT: a sensible slice of account value, within (0, 100].
+        if self.amount_type == AmountType.FIXED and self.amount < 5:
+            raise ValueError("amount must be >= 5 when amount_type is FIXED")
+        if self.amount_type == AmountType.PERCENT and not 0 < self.amount <= 100:
+            raise ValueError("amount must be within (0, 100] when amount_type is PERCENT")
+        return self
 
 
 
 class HookPayloadModel(BaseModel):
     hook_name: str
     direction: TradeDirection
-    trade_amount: Annotated[float, Field(gt=10)]
+    trade_amount: Annotated[float, Field(gt=0)]
+    amount_type: AmountType = AmountType.FIXED
     stop_loss: Annotated[float, Field(gt=10)]
     take_profit: Annotated[float, Field(gt=10)]
     take_profit_exit: Optional[Literal['on']] = None

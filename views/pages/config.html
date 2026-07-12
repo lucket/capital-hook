@@ -28,7 +28,14 @@
           </div>
           <div class="form-group">
             <label for="tradeAmount">Trade Amount</label>
-            <input type="number" id="tradeAmount" name="trade_amount" required />
+            <input type="number" step="any" id="tradeAmount" name="trade_amount" required />
+          </div>
+          <div class="form-group">
+            <label for="amountType">amount type</label>
+            <select id="amountType" name="amount_type">
+              <option value="FIXED">FIXED &mdash; cash</option>
+              <option value="PERCENT">PERCENT &mdash; % of account value</option>
+            </select>
           </div>
           <div class="form-group">
             <label for="takeProfit">take profit</label>

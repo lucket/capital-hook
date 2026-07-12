@@ -20,6 +20,10 @@ class TradeMode(Enum):
     DEMO = "DEMO"
     LIVE = "LIVE"
 
+class AmountType(Enum):
+    FIXED = "FIXED"      # `amount` is a fixed cash figure in the account currency
+    PERCENT = "PERCENT"  # `amount` is a percentage of total account value
+
 class TradeInstrument(Enum):
     CRYPTOCURRENCIES = "CRYPTOCURRENCIES"
     SHARES = "SHARES"
