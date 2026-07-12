@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="70 45 700 545" font-family="ui-sans-serif, system-ui, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="rb" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#1e1e1e"/></marker>
+    <marker id="rg" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#15803d"/></marker>
+    <marker id="rr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#b91c1c"/></marker>
+  </defs>
+  <rect x="70" y="45" width="700" height="545" fill="#ffffff"/>
+  <text x="400" y="62" text-anchor="middle" font-size="21" font-weight="600" fill="#1e1e1e">Ticker Resolution — env-first</text>
+
+  <!-- arrows first (under boxes) -->
+  <g stroke-width="2" fill="none">
+    <line x1="400" y1="112" x2="400" y2="131" stroke="#1e1e1e" marker-end="url(#rb)"/>
+    <line x1="335" y1="172" x2="246" y2="172" stroke="#15803d" marker-end="url(#rg)"/>
+    <line x1="465" y1="172" x2="556" y2="172" stroke="#b91c1c" marker-end="url(#rr)"/>
+    <line x1="645" y1="195" x2="645" y2="231" stroke="#1e1e1e" marker-end="url(#rb)"/>
+    <line x1="645" y1="293" x2="645" y2="328" stroke="#1e1e1e" marker-end="url(#rb)"/>
+    <line x1="645" y1="390" x2="645" y2="424" stroke="#b91c1c" marker-end="url(#rr)"/>
+    <line x1="545" y1="260" x2="484" y2="343" stroke="#15803d" marker-end="url(#rg)"/>
+    <line x1="545" y1="358" x2="484" y2="356" stroke="#15803d" marker-end="url(#rg)"/>
+    <line x1="165" y1="195" x2="333" y2="328" stroke="#1e1e1e" marker-end="url(#rb)"/>
+    <line x1="390" y1="380" x2="390" y2="416" stroke="#1e1e1e" marker-end="url(#rb)"/>
+    <line x1="310" y1="457" x2="242" y2="457" stroke="#15803d" marker-end="url(#rg)"/>
+    <line x1="390" y1="494" x2="390" y2="528" stroke="#b91c1c" marker-end="url(#rr)"/>
+  </g>
+
+  <!-- boxes -->
+  <g stroke-width="2">
+    <rect x="300" y="66" width="200" height="46" rx="10" fill="#a5d8ff" stroke="#4a9eed"/>
+    <polygon points="400,135 465,172 400,209 335,172" fill="#fff3bf" stroke="#f59e0b"/>
+    <rect x="90" y="149" width="150" height="46" rx="10" fill="#d0bfff" stroke="#8b5cf6"/>
+    <rect x="560" y="149" width="170" height="46" rx="10" fill="#d0bfff" stroke="#8b5cf6"/>
+    <rect x="545" y="235" width="200" height="58" rx="10" fill="#d0bfff" stroke="#7c3aed"/>
+    <rect x="545" y="332" width="200" height="58" rx="10" fill="#c3fae8" stroke="#06b6d4"/>
+    <rect x="545" y="428" width="200" height="46" rx="10" fill="#ffc9c9" stroke="#ef4444"/>
+    <rect x="300" y="330" width="180" height="50" rx="10" fill="#b2f2bb" stroke="#22c55e"/>
+    <polygon points="390,420 470,457 390,494 310,457" fill="#fff3bf" stroke="#f59e0b"/>
+    <rect x="90" y="434" width="150" height="46" rx="10" fill="#b2f2bb" stroke="#22c55e"/>
+    <rect x="300" y="532" width="180" height="44" rx="10" fill="#ffc9c9" stroke="#ef4444"/>
+  </g>
+
+  <!-- box labels -->
+  <g text-anchor="middle" fill="#1e1e1e" font-size="14">
+    <text x="400" y="94">Webhook payload</text>
+    <text x="400" y="168">epic in</text><text x="400" y="184">payload?</text>
+    <text x="165" y="177">use epic directly</text>
+    <text x="645" y="177">ticker + source</text>
+    <text x="645" y="259">1) ENV layer</text><text x="645" y="277" font-size="13">TICKER_CONFIG · wins</text>
+    <text x="645" y="356">2) DB layer</text><text x="645" y="374" font-size="13">Mapping (fallback)</text>
+    <text x="645" y="456" font-size="13">400 No ticker mapping</text>
+    <text x="390" y="360" font-size="15">epic resolved</text>
+    <text x="390" y="453">epic in</text><text x="390" y="469">markets?</text>
+    <text x="165" y="462" font-size="15">open trade</text>
+    <text x="390" y="559" font-size="13">400 Invalid epic</text>
+  </g>
+
+  <!-- edge labels -->
+  <g text-anchor="middle" font-size="13">
+    <text x="288" y="166" fill="#15803d">yes</text>
+    <text x="512" y="166" fill="#b91c1c">no</text>
+    <rect x="628" y="303" width="34" height="15" fill="#ffffff"/><text x="645" y="315" fill="#1e1e1e">miss</text>
+    <rect x="628" y="400" width="34" height="15" fill="#ffffff"/><text x="645" y="412" fill="#b91c1c">miss</text>
+    <text x="527" y="300" fill="#15803d">hit</text>
+    <text x="527" y="352" fill="#15803d">hit</text>
+    <text x="278" y="452" fill="#15803d">yes</text>
+    <text x="404" y="516" fill="#b91c1c">no</text>
+  </g>
+</svg>
