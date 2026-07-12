@@ -443,3 +443,16 @@ async def portfolio_balance():
     except Exception as e:
         await Logger.app_log(title="PORTFOLIO_ERR", message=str(e))
         return memory.portfolio
+
+
+async def get_account_market_value() -> float:
+    """Total account value (equity/balance) in the account currency.
+
+    Used to convert a percentage-based trade `amount` into a cash figure.
+    Returns 0.0 if the balance cannot be resolved, letting the caller abort.
+    """
+    account = await portfolio_balance()
+    try:
+        return float((account or {}).get("balance", {}).get("balance", 0.0) or 0.0)
+    except (AttributeError, TypeError, ValueError):
+        return 0.0

@@ -1,5 +1,5 @@
 import asyncio
-from enums.trade import TradeDirection, ExitType
+from enums.trade import TradeDirection, ExitType, AmountType
 from logger import Logger
 from service.capital_api import is_market_eow_close, open_trade, close_trade, is_market_eod_close
 from datetime import datetime
@@ -12,7 +12,8 @@ from typing import List
 class HookedTradeExecution:
     trade_direction: TradeDirection
     epic: str
-    trade_amount: int
+    trade_amount: float
+    amount_type: AmountType
     hook_name: str
     profit: int
     loss: int
@@ -32,11 +33,12 @@ class HookedTradeExecution:
     percentage: float
     
     
-    def __init__(self, trade_direction: TradeDirection, epic: str, trade_amount: int, profit: int, loss: int, hook_name: str, exit_criteria: List[ExitType]):
+    def __init__(self, trade_direction: TradeDirection, epic: str, trade_amount: float, profit: int, loss: int, hook_name: str, exit_criteria: List[ExitType], amount_type: AmountType = AmountType.FIXED):
         from settings import settings
         self.trade_direction = trade_direction
         self.epic = epic
         self.trade_amount = trade_amount
+        self.amount_type = amount_type
         self.hook_name = hook_name
         self.profit = profit
         self.loss = loss
@@ -74,7 +76,30 @@ class HookedTradeExecution:
             self.trade_size = float(f"{self.trade_size:.2g}") if self.trade_size < 1 else round_trade_size(self.trade_size) if self.trade_size > 2 else float(f"{self.trade_size:.2f}")
         return leverage_size
             
+    async def __resolve_capital(self) -> None:
+        """Resolve the committed capital before sizing.
+
+        For PERCENT sizing, `trade_amount` arrives as a percentage and is
+        converted to a cash figure from the live total account value. FIXED
+        sizing is left untouched.
+        """
+        if self.amount_type != AmountType.PERCENT:
+            return
+
+        from service.capital_api import get_account_market_value
+
+        percent = float(self.trade_amount)
+        account_value = await get_account_market_value()
+        self.trade_amount = account_value * percent / 100.0
+        await Logger.app_log(
+            title="PERCENT_SIZING",
+            message=f"{self.epic} {percent}% of {account_value:,.2f} => {self.trade_amount:,.2f}  [{self.hook_name.upper()}]",
+        )
+        if self.trade_amount <= 0:
+            raise Exception("Account value unavailable for percentage sizing")
+
     async def __risk_reward_setup(self):
+        await self.__resolve_capital()
         ask, bid =  memory.get_current_price(self.epic)
         self.entry_price = float(ask) if self.trade_direction == TradeDirection.BUY else float(bid)
         reward, risk =  self.profit, self.loss
