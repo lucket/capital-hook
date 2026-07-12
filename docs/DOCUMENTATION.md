@@ -7,11 +7,15 @@ automatically. A password-protected web dashboard shows live balance, open posit
 history.
 
 This document describes what the application actually does, endpoint by endpoint and feature by
-feature, based on the current source. For install/quick-start steps see [`README.md`](README.md).
+feature, based on the current source. For install/quick-start steps see [`README.md`](../README.md).
 
 ---
 
 ## 1. Architecture at a glance
+
+![Capital Hook architecture and data flow](diagrams/architecture.svg)
+
+<sub>Source: [`diagrams/architecture.excalidraw`](diagrams/architecture.excalidraw) (open/edit in [Excalidraw](https://excalidraw.com)).</sub>
 
 ```
 TradingView Alert  ──POST──▶  /webhook/trading-view  ──▶  HookedTradeExecution (background task)
@@ -30,18 +34,18 @@ Key runtime pieces:
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
-| App entrypoint & auth middleware | [`main.py`](main.py) | FastAPI app, lifespan startup/shutdown, route mounting, session guard |
-| Settings & credentials | [`settings.py`](settings.py) | Env config, DEMO/LIVE host selection, shared HTTP session |
-| In-memory state | [`memory.py`](memory.py) | Positions, prices, epics, leverage, hooked-trade dedup |
-| Trade execution | [`hook_trade.py`](hook_trade.py) | Open a position and run the monitor/exit loop |
-| Resume execution | [`resume_trade.py`](resume_trade.py) | Re-attach the monitor loop to positions that survived a restart |
-| Recalibration | [`recalibrate.py`](recalibrate.py) | Trailing profit-lock logic |
-| Capital.com REST | [`service/capital_api.py`](service/capital_api.py) | Login, positions, markets, account, market-hours logic |
-| Capital.com WebSocket | [`service/capital_socket.py`](service/capital_socket.py), [`service/socket_manager.py`](service/socket_manager.py) | Live price streaming, reconnect, 40-epics-per-socket pooling |
-| Scheduled jobs | [`job.py`](job.py) | Keep-alive pings, auth refresh, market/hours refresh, resume trades |
-| Persistence | [`database.py`](database.py) | SQLite schema + queries |
+| App entrypoint & auth middleware | [`main.py`](../main.py) | FastAPI app, lifespan startup/shutdown, route mounting, session guard |
+| Settings & credentials | [`settings.py`](../settings.py) | Env config, DEMO/LIVE host selection, shared HTTP session |
+| In-memory state | [`memory.py`](../memory.py) | Positions, prices, epics, leverage, hooked-trade dedup |
+| Trade execution | [`hook_trade.py`](../hook_trade.py) | Open a position and run the monitor/exit loop |
+| Resume execution | [`resume_trade.py`](../resume_trade.py) | Re-attach the monitor loop to positions that survived a restart |
+| Recalibration | [`recalibrate.py`](../recalibrate.py) | Trailing profit-lock logic |
+| Capital.com REST | [`service/capital_api.py`](../service/capital_api.py) | Login, positions, markets, account, market-hours logic |
+| Capital.com WebSocket | [`service/capital_socket.py`](../service/capital_socket.py), [`service/socket_manager.py`](../service/socket_manager.py) | Live price streaming, reconnect, 40-epics-per-socket pooling |
+| Scheduled jobs | [`job.py`](../job.py) | Keep-alive pings, auth refresh, market/hours refresh, resume trades |
+| Persistence | [`database.py`](../database.py) | SQLite schema + queries |
 | Web routes | [`routes/`](routes) | `auth`, `view`, `api`, `webhook` routers |
-| Auth primitives | [`auth.py`](auth.py) | HMAC-signed session cookie, password check |
+| Auth primitives | [`auth.py`](../auth.py) | HMAC-signed session cookie, password check |
 
 ---
 
@@ -63,7 +67,7 @@ Generate a strong secret:
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Hosts are selected automatically by trade mode ([`settings.py`](settings.py)):
+Hosts are selected automatically by trade mode ([`settings.py`](../settings.py)):
 
 - **LIVE** → `https://api-capital.backend-capital.com`
 - **DEMO** → `https://demo-api-capital.backend-capital.com`
@@ -82,7 +86,7 @@ the client-controlled `X-Forwarded-For` header, which is spoofable. Behind a rev
 `--proxy-headers --forwarded-allow-ips=<proxy-ip>` so `request.client` reflects the real client
 address.
 
-### Startup sequence (`lifespan` in [`main.py`](main.py))
+### Startup sequence (`lifespan` in [`main.py`](../main.py))
 
 On boot the app performs, in order:
 
@@ -103,7 +107,7 @@ On shutdown it closes the SQLite connection and the shared HTTP session.
 All HTML pages and `/api/*` endpoints are gated by a session cookie. The webhook is intentionally
 **not** gated (TradingView cannot send a cookie); it is protected by an IP whitelist instead.
 
-### Session model ([`auth.py`](auth.py), middleware in [`main.py`](main.py))
+### Session model ([`auth.py`](../auth.py), middleware in [`main.py`](../main.py))
 
 - Sign in at **`/login`** with `APP_PASSWORD`. A signed, HTTP-only cookie `ch_session` is set for **7 days**.
 - The token is `"<expiry>.<HMAC-SHA256(expiry)>"`, signed with `APP_SECRET_KEY`; both the signature and password checks use constant-time comparison.
@@ -113,7 +117,7 @@ All HTML pages and `/api/*` endpoints are gated by a session cookie. The webhook
   - Unauthenticated plain **GET** navigations are redirected to `/login`.
   - Unauthenticated **API** calls receive `401 {"detail": "Unauthorized"}`.
 
-### Webhook IP whitelist ([`settings.py`](settings.py))
+### Webhook IP whitelist ([`settings.py`](../settings.py))
 
 Only these source IPs are accepted on the webhook (the four official TradingView IPs plus localhost):
 
@@ -127,9 +131,15 @@ Requests from any other IP get `403 {"message": "IP not whitelisted"}`.
 
 ## 5. The TradingView webhook
 
-**Endpoint:** `POST /webhook/trading-view` ([`routes/webhook.py`](routes/webhook.py))
+**Endpoint:** `POST /webhook/trading-view` ([`routes/webhook.py`](../routes/webhook.py))
 
-### Request body ([`model.py`](model.py) → `TradingViewWebhookModel`)
+The webhook accepts either an `epic` (used directly) or a `ticker` + `source`, which is resolved to an epic — the **environment layer wins, the DB is a fallback**:
+
+![Ticker resolution — env-first](diagrams/ticker-resolution.svg)
+
+<sub>Source: [`diagrams/ticker-resolution.excalidraw`](diagrams/ticker-resolution.excalidraw).</sub>
+
+### Request body ([`model.py`](../model.py) → `TradingViewWebhookModel`)
 
 ```json
 {
@@ -168,7 +178,7 @@ Requests from any other IP get `403 {"message": "IP not whitelisted"}`.
 
 ## 6. Position identity & the "hook name" concept
 
-A live trade is keyed by the pair **`{epic}_{hook_name}`** ([`memory.py`](memory.py) →
+A live trade is keyed by the pair **`{epic}_{hook_name}`** ([`memory.py`](../memory.py) →
 `hooked_trades`). This gives two guarantees:
 
 - **One position per strategy per instrument.** The same `hook_name` on the same `epic` can only
@@ -183,21 +193,21 @@ and live state never mix.
 
 ## 7. Trade sizing & risk/reward setup
 
-When a trade opens ([`hook_trade.py`](hook_trade.py) → `__risk_reward_setup` / `__set_trade_size`):
+When a trade opens ([`hook_trade.py`](../hook_trade.py) → `__risk_reward_setup` / `__set_trade_size`):
 
 1. **Entry price** = current ask for BUY, current bid for SELL (from streamed prices).
 2. **Leverage** for the epic's instrument is read from cached account preferences.
 3. **Notional** = `amount × leverage`; raw **size** = `notional / entry_price`.
-4. Size is then **rounded per instrument type** ([`enums/trade.py`](enums/trade.py) `TradeInstrument`):
+4. Size is then **rounded per instrument type** ([`enums/trade.py`](../enums/trade.py) `TradeInstrument`):
    - `CURRENCIES` → `max(100, round to nearest 100)`
    - `SHARES` → whole number
    - `COMMODITIES` → 1 decimal place
-   - `INDICES` / others → precision rules in `__set_trade_size` / `round_trade_size` ([`utils.py`](utils.py))
+   - `INDICES` / others → precision rules in `__set_trade_size` / `round_trade_size` ([`utils.py`](../utils.py))
 5. **Stop-loss** and **take-profit price levels** are derived from `loss`/`profit` (in currency)
    divided by size to get the price move, then applied above/below entry according to direction.
 
 The position is opened via `POST /api/v1/positions` on Capital.com; the resulting `dealId` is
-resolved by polling open positions ([`service/capital_api.py`](service/capital_api.py) →
+resolved by polling open positions ([`service/capital_api.py`](../service/capital_api.py) →
 `open_trade` / `get_epic_deal_id`) and persisted to the `positions` table.
 
 ---
@@ -225,15 +235,15 @@ exposes `TP`, `SL`, `STRATEGY`, `EOD_CLOSE`, and `EOW_CLOSE`.
 
 The EOD/EOW timing is computed from each instrument's `openingHours` fetched from Capital.com and
 cached in `memory.trading_hours` (see `is_market_eod_close` / `is_market_eow_close` in
-[`service/capital_api.py`](service/capital_api.py)).
+[`service/capital_api.py`](../service/capital_api.py)).
 
 ---
 
 ## 9. Recalibration (trailing profit lock)
 
-`RECALIBRATE` ([`recalibrate.py`](recalibrate.py) → `TrailRecalibration`, driven by
+`RECALIBRATE` ([`recalibrate.py`](../recalibrate.py) → `TrailRecalibration`, driven by
 `memory.recalibrate_trade()`) manages exits based on **aggregate open PnL** across all current
-positions in the active mode. Defaults ([`memory.py`](memory.py)):
+positions in the active mode. Defaults ([`memory.py`](../memory.py)):
 
 - **`recalibrate_profit = 500`** — trailing only activates once total open PnL reaches +500.
 - **`recalibrate_trail_gauge = 70`** — once active, it tracks the running max and triggers a close
@@ -249,8 +259,8 @@ riding it all the way back down.
 ## 10. Live price streaming
 
 Prices come from Capital.com's WebSocket, managed by a small pool
-([`service/socket_manager.py`](service/socket_manager.py),
-[`service/capital_socket.py`](service/capital_socket.py)):
+([`service/socket_manager.py`](../service/socket_manager.py),
+[`service/capital_socket.py`](../service/capital_socket.py)):
 
 - **≤ 40 epics per socket**; new sockets are created on demand as more epics are subscribed.
 - On subscribe, the latest ask/bid is seeded from the REST API so monitoring can start immediately.
@@ -260,7 +270,7 @@ Prices come from Capital.com's WebSocket, managed by a small pool
 
 ---
 
-## 11. Scheduled background jobs ([`job.py`](job.py))
+## 11. Scheduled background jobs ([`job.py`](../job.py))
 
 An `AsyncIOScheduler` runs these recurring jobs:
 
@@ -273,7 +283,7 @@ An `AsyncIOScheduler` runs these recurring jobs:
 
 ---
 
-## 12. Crash / restart recovery ([`job.py`](job.py) → `resume_trades`)
+## 12. Crash / restart recovery ([`job.py`](../job.py) → `resume_trades`)
 
 On startup the app reconciles persisted positions with reality:
 
@@ -319,7 +329,7 @@ All pages are server-rendered (Jinja2 + htmx) and require a session.
 
 ### `POST /api/generate-payload`
 
-Request ([`model.py`](model.py) → `HookPayloadModel`): `hook_name`, `direction`, `trade_amount`,
+Request ([`model.py`](../model.py) → `HookPayloadModel`): `hook_name`, `direction`, `trade_amount`,
 `stop_loss`, `take_profit`, and any of the toggles `take_profit_exit`, `stop_loss_exit`,
 `strategy_exit`, `end_of_day_close_exit`, `end_of_week_close_exit` set to `"on"`.
 
@@ -339,7 +349,7 @@ Response — a payload you paste into the TradingView alert **Message** field:
 
 ---
 
-## 15. Persistence (SQLite, [`database.py`](database.py))
+## 15. Persistence (SQLite, [`database.py`](../database.py))
 
 Database file: `database.db`. Three tables:
 
@@ -371,7 +381,7 @@ PnL** from the `trades` rows for the active mode.
 ## 17. Logging
 
 All significant events (logins, webhook receipts, opens/closes, API/WebSocket errors) are appended
-to **`app.log`** and printed to stdout ([`logger.py`](logger.py)).
+to **`app.log`** and printed to stdout ([`logger.py`](../logger.py)).
 
 ---
 
