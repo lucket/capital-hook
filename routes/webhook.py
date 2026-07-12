@@ -18,18 +18,30 @@ async def tradingview_webhook_route(data: TradingViewWebhookModel, request: Requ
         await Logger.app_log(title="TradingView_Webhook_Error", message=f"IP {client_ip} not whitelisted")
         return JSONResponse(status_code=403, content={"message": "IP not whitelisted"})
     
+    # resolve the executing epic. `epic` (if given) is used directly — original
+    # behavior. Otherwise map `ticker` from its source provider to the executing
+    # provider's epic via the ticker mapping tables.
+    epic = data.epic.strip() if data.epic else None
+    if not epic:
+        from ticker_map import resolve_epic
+        source = (data.source or settings.DEFAULT_SOURCE_PROVIDER)
+        epic = await resolve_epic(source_provider_id=source, source_ticker=data.ticker, target_provider_id=settings.EXECUTING_PROVIDER)
+        if not epic:
+            await Logger.app_log(title="TradingView_Webhook_Error", message=f"No mapping for {source}:{data.ticker} -> {settings.EXECUTING_PROVIDER}")
+            return JSONResponse(status_code=400, content={"message": "No ticker mapping"})
+
     # validate capital.com epic
-    if data.epic not in memory.epics:
-        await Logger.app_log(title="TradingView_Webhook_Error", message=f"Epic {data.epic} not available")
+    if epic not in memory.epics:
+        await Logger.app_log(title="TradingView_Webhook_Error", message=f"Epic {epic} not available")
         return JSONResponse(status_code=400, content={"message": "Invalid epic"})
-    
-    # 
-    if memory.get_trading_view_hooked_trade_side(data.epic, data.hook_name) == data.direction: # check if the trade is already executed on trade side
-        await Logger.app_log(title="TradingView_Webhook_Error", message=f"Trade already executed for {data.epic} {data.direction.value}")
+
+    #
+    if memory.get_trading_view_hooked_trade_side(epic, data.hook_name) == data.direction: # check if the trade is already executed on trade side
+        await Logger.app_log(title="TradingView_Webhook_Error", message=f"Trade already executed for {epic} {data.direction.value}")
     else:
         from hook_trade import HookedTradeExecution
-        hooked_trade = HookedTradeExecution(epic=data.epic, trade_amount=data.amount, profit=data.profit, loss=data.loss, hook_name=data.hook_name, trade_direction=data.direction, exit_criteria=data.exit_criteria, amount_type=data.amount_type)
+        hooked_trade = HookedTradeExecution(epic=epic, trade_amount=data.amount, profit=data.profit, loss=data.loss, hook_name=data.hook_name, trade_direction=data.direction, exit_criteria=data.exit_criteria, amount_type=data.amount_type)
         background_task.add_task(hooked_trade.execute_trade)
-        
-        memory.update_trading_view_hooked_trades(epic=data.epic, direction=data.direction, hook_name=data.hook_name) # update the hooked trades in settings
-        await Logger.app_log(title="TradingView_Webhook", message=f"Webhook received from {client_ip} for {data.epic} {data.direction.value} trade")
+
+        memory.update_trading_view_hooked_trades(epic=epic, direction=data.direction, hook_name=data.hook_name) # update the hooked trades in settings
+        await Logger.app_log(title="TradingView_Webhook", message=f"Webhook received from {client_ip} for {epic} {data.direction.value} trade")

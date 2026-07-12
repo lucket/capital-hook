@@ -33,7 +33,15 @@ class Settings:
     APP_SECRET_KEY: str = os.getenv("APP_SECRET_KEY") or secrets.token_hex(32)
 
     TRADE_MODE: TradeMode
-    
+
+    # Ticker mapping: which provider a webhook `ticker` comes from by default,
+    # and which provider actually executes the trade (this app = Capital.com).
+    DEFAULT_SOURCE_PROVIDER: str = os.getenv("DEFAULT_SOURCE_PROVIDER", "TV")
+    EXECUTING_PROVIDER: str = os.getenv("EXECUTING_PROVIDER", "C")
+    # Optional JSON blob with the complete provider/ticker/mapping config,
+    # imported into the DB on startup. See ticker_map.import_config.
+    TICKER_CONFIG: str = os.getenv("TICKER_CONFIG")
+
     TRADINGVIEW_IP_ADDRESS : list = ["52.89.214.238", "34.212.75.30", "54.218.53.128", "52.32.178.7", "127.0.0.1"]
     
     session: AsyncClient = AsyncClient() # HTTP session initialization

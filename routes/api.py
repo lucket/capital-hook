@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
 from service.capital_api import portfolio_balance, memory
 from model import HookPayloadModel, TradeModeModel, ExitType
@@ -117,3 +117,29 @@ async def generate_payload(data: HookPayloadModel):
         status_code=status.HTTP_200_OK,
         content=payload
     )
+
+
+@api.get("/ticker-config")
+async def get_ticker_config():
+    """Export the full provider/ticker mapping config.
+
+    The returned JSON round-trips with the import endpoint and can be pasted
+    directly into the TICKER_CONFIG environment variable.
+    """
+    from ticker_map import export_config
+    return JSONResponse(status_code=status.HTTP_200_OK, content=await export_config())
+
+
+@api.post("/ticker-config")
+async def post_ticker_config(request: Request):
+    """Import (upsert) providers, markets, tickers and mappings.
+
+    Accepts the same JSON shape produced by GET /ticker-config. Existing rows
+    with matching keys are replaced; others are left untouched.
+    """
+    from ticker_map import import_config, export_config
+    config = await request.json()
+    if not isinstance(config, dict):
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"message": "Body must be a JSON object"})
+    await import_config(config)
+    return JSONResponse(status_code=status.HTTP_200_OK, content=await export_config())

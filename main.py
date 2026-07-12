@@ -23,6 +23,10 @@ async def lifespan(app: FastAPI):
     await migrate_db()  # migrate DB
     await settings.sync_trade_mode()
 
+    # seed default providers + import ticker mapping config from env (if any)
+    from ticker_map import load_config_from_env
+    await load_config_from_env()
+
     # update market data
     await update_auth_header()
     await update_markets()

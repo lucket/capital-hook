@@ -191,6 +191,57 @@ To automate your trades, you need to set up alerts in TradingView that send data
 
 ---
 
+## 🔗 Ticker Mapping (provider → provider)
+
+Capital.com epics often differ from the symbol your alert source uses (e.g. TradingView `XAUUSD` vs Capital.com `GOLD`). Instead of hardcoding the epic, you can send a **`ticker`** and let Capital Hook resolve it to the executing epic through a small set of mapping tables.
+
+**Identify the instrument in the webhook one of two ways:**
+
+- **`epic`** — used directly (original behavior, unchanged). Takes priority if present.
+- **`ticker`** (+ optional **`source`**) — resolved to a Capital.com epic via the mapping. `source` is the provider code the ticker comes from; if omitted it defaults to `DEFAULT_SOURCE_PROVIDER` (`TV`). The executing provider is `EXECUTING_PROVIDER` (`C` = Capital.com).
+
+```json
+{ "ticker": "XAUUSD", "source": "TV", "direction": "BUY", "amount": 100, "hook_name": "EMA", "profit": 120, "loss": 50, "exit_criteria": ["TP","SL"] }
+```
+
+If no mapping matches, the trade is rejected (`400 No ticker mapping`) — nothing is opened.
+
+### Data model
+
+Four tables (created automatically on startup):
+
+| Table | Key | Columns |
+|-------|-----|---------|
+| `provider` | `id` | `name` — provider codes: `TV` TradingView, `C` Capital.com, `IB` Interactive Broker (seeded by default) |
+| `markets` | `(provider_id, market_id)` | `description` |
+| `ticker` | `(provider_id, ticker)` | `description`, `market_id` |
+| `ticker_mapping` | `(source_provider_id, source_ticker, target_provider_id)` | `target_ticker` — links a source ticker to the executing epic |
+
+### Configuring the mapping
+
+The whole config is a single JSON document that can be **imported from the environment** and **exported over the API** (they round-trip):
+
+- **Environment:** set `TICKER_CONFIG` to the JSON blob; it is upserted into the DB on startup. Also set `DEFAULT_SOURCE_PROVIDER` / `EXECUTING_PROVIDER` if you want non-default codes. See `.env.example`.
+- **API (session-protected):**
+  - `GET /api/ticker-config` — export the current config (paste straight into `TICKER_CONFIG`).
+  - `POST /api/ticker-config` — import/upsert the same JSON shape.
+
+```json
+{
+  "providers": [{"id": "TV", "name": "TradingView"}, {"id": "C", "name": "Capital.com"}],
+  "markets":   [{"provider_id": "C", "market_id": "US", "description": "US markets"}],
+  "tickers":   [
+    {"provider_id": "TV", "ticker": "CBOE:AVIX", "description": "Volatility", "market_id": null},
+    {"provider_id": "C",  "ticker": "VIX", "description": "Volatility Index", "market_id": "US"}
+  ],
+  "mappings":  [{"source_provider_id": "TV", "source_ticker": "CBOE:AVIX", "target_provider_id": "C", "target_ticker": "VIX"}]
+}
+```
+
+Imports are additive/idempotent — rows with matching keys are replaced, others are left untouched (never a full wipe). Source-ticker matching is case-insensitive.
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions! If you have ideas or fixes, please:

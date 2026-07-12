@@ -58,6 +58,48 @@ async def migrate_db() -> None:
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # provider: a data/execution source, keyed by a short code
+            # (e.g. TV = TradingView, C = Capital.com, IB = Interactive Broker)
+            await cursor.execute("""
+                CREATE TABLE IF NOT EXISTS provider (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL
+                )
+            """)
+
+            # markets: a market/exchange within a provider
+            await cursor.execute("""
+                CREATE TABLE IF NOT EXISTS markets (
+                    provider_id TEXT NOT NULL,
+                    market_id TEXT NOT NULL,
+                    description TEXT,
+                    PRIMARY KEY (provider_id, market_id)
+                )
+            """)
+
+            # ticker: a symbol as named by a specific provider
+            await cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ticker (
+                    provider_id TEXT NOT NULL,
+                    ticker TEXT NOT NULL,
+                    description TEXT,
+                    market_id TEXT,
+                    PRIMARY KEY (provider_id, ticker)
+                )
+            """)
+
+            # ticker_mapping: link a source-provider ticker to the equivalent
+            # ticker on an executing provider (e.g. TV "CBOE:AVIX" -> C "VIX")
+            await cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ticker_mapping (
+                    source_provider_id TEXT NOT NULL,
+                    source_ticker TEXT NOT NULL,
+                    target_provider_id TEXT NOT NULL,
+                    target_ticker TEXT NOT NULL,
+                    PRIMARY KEY (source_provider_id, source_ticker, target_provider_id)
+                )
+            """)
         await db.commit()
         
         

@@ -5,7 +5,13 @@ from typing import Literal, List, Optional
 
 
 class TradingViewWebhookModel(BaseModel):
-    epic: str
+    # Provide EITHER `epic` (used directly, original behavior) OR `ticker`
+    # (resolved to an epic via the ticker mapping tables). `source` is the
+    # provider the ticker comes from; when omitted it defaults to
+    # settings.DEFAULT_SOURCE_PROVIDER at resolution time.
+    epic: Optional[str] = None
+    ticker: Optional[str] = None
+    source: Optional[str] = None
     direction: TradeDirection
     amount: Annotated[float, Field(gt=0)]
     amount_type: AmountType = AmountType.FIXED
@@ -15,7 +21,11 @@ class TradingViewWebhookModel(BaseModel):
     exit_criteria: List[ExitType]
 
     @model_validator(mode="after")
-    def _validate_amount(self):
+    def _validate(self):
+        # Must identify the instrument by epic or ticker.
+        if not (self.epic and self.epic.strip()) and not (self.ticker and self.ticker.strip()):
+            raise ValueError("either 'epic' or 'ticker' must be provided")
+
         # FIXED: at least 5 units of account currency.
         # PERCENT: a sensible slice of account value, within (0, 100].
         if self.amount_type == AmountType.FIXED and self.amount < 5:
