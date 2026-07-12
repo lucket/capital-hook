@@ -39,6 +39,10 @@ class TradingViewWebhookModel(BaseModel):
 class HookPayloadModel(BaseModel):
     hook_name: str
     direction: TradeDirection
+    # symbol_mode 'epic' -> payload carries {"epic": "{{ticker}}"} (original).
+    # 'ticker'          -> payload carries {"ticker": "{{ticker}}", "source": ...}
+    symbol_mode: Literal['epic', 'ticker'] = 'epic'
+    source: Optional[str] = None
     trade_amount: Annotated[float, Field(gt=0)]
     amount_type: AmountType = AmountType.FIXED
     stop_loss: Annotated[float, Field(gt=10)]

@@ -219,12 +219,15 @@ Four tables (created automatically on startup):
 
 ### Configuring the mapping
 
-The whole config is a single JSON document that can be **imported from the environment** and **exported over the API** (they round-trip):
+Three ways, all backed by the same tables:
 
+- **Mapping page (UI):** the **Mapping** tab in the dashboard is a simple CRUD editor for providers, markets, tickers and the mappings themselves. The mapping form has type-ahead ticker pickers that search the `ticker` table for the chosen provider.
 - **Environment:** set `TICKER_CONFIG` to the JSON blob; it is upserted into the DB on startup. Also set `DEFAULT_SOURCE_PROVIDER` / `EXECUTING_PROVIDER` if you want non-default codes. See `.env.example`.
 - **API (session-protected):**
   - `GET /api/ticker-config` — export the current config (paste straight into `TICKER_CONFIG`).
   - `POST /api/ticker-config` — import/upsert the same JSON shape.
+
+The **Config** page's payload generator can emit either an `epic`-based payload (default) or a `ticker`+`source` payload (choose "symbol by → ticker").
 
 ```json
 {

@@ -1,0 +1,37 @@
+<div id="tickers-section" class="mapping-section">
+  <h2>Tickers</h2>
+  <table class="mapping-table">
+    <thead>
+      <tr><th>Provider</th><th>Ticker</th><th>Description</th><th>Market</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for t in tickers %}
+      <tr>
+        <td>{{ t.provider_id }}</td>
+        <td>{{ t.ticker }}</td>
+        <td>{{ t.description or '' }}</td>
+        <td>{{ t.market_id or '' }}</td>
+        <td>
+          <button type="button" class="del-btn"
+            hx-post="/mapping/ticker/delete" hx-ext="json-enc"
+            hx-vals='{"provider_id": "{{ t.provider_id }}", "ticker": "{{ t.ticker }}"}'
+            hx-target="#tickers-section" hx-swap="outerHTML"
+            hx-confirm="Delete ticker {{ t.provider_id }}:{{ t.ticker }}?">&times;</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" style="text-align:center">No tickers</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form class="mapping-add" hx-post="/mapping/ticker" hx-ext="json-enc"
+        hx-target="#tickers-section" hx-swap="outerHTML">
+    <select name="provider_id" required>
+      {% for p in providers %}<option value="{{ p.id }}">{{ p.id }}</option>{% endfor %}
+    </select>
+    <input name="ticker" placeholder="Ticker (e.g. CBOE:AVIX)" required />
+    <input name="description" placeholder="Description" />
+    <input name="market_id" placeholder="Market ID" />
+    <button type="submit">Add</button>
+  </form>
+</div>

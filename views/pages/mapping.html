@@ -1,0 +1,19 @@
+{% extends "layout/dashboard.html" %} {% block content %}
+<div class="header-large">
+  <h1>Ticker Mapping</h1>
+</div>
+<div class="platform-container-cover">
+  <div class="platform-container">
+    <div class="content mapping-content">
+      <p class="mapping-hint">
+        Map a source-provider ticker to the Capital.com epic used for execution.
+        Alerts can then send <code>ticker</code> + <code>source</code> instead of a raw <code>epic</code>.
+      </p>
+      {% include "components/mapping/providers.html" %}
+      {% include "components/mapping/markets.html" %}
+      {% include "components/mapping/tickers.html" %}
+      {% include "components/mapping/mappings.html" %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,2 @@
+{% for t in tickers %}<option value="{{ t.ticker }}">{{ t.description or t.provider_id }}</option>
+{% endfor %}
