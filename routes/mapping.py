@@ -14,7 +14,7 @@ templates = Jinja2Templates(directory="views")
 
 
 def _frag(name: str, request: Request, **ctx):
-    return templates.TemplateResponse(f"components/mapping/{name}", {"request": request, **ctx})
+    return templates.TemplateResponse(request, f"components/mapping/{name}", {"request": request, **ctx})
 
 
 async def _providers_frag(request):
@@ -36,7 +36,7 @@ async def _mappings_frag(request):
 @mapping.get("/mapping", tags=["Mapping"])
 async def mapping_page(request: Request):
     from memory import settings
-    return templates.TemplateResponse("pages/mapping.html", {
+    return templates.TemplateResponse(request, "pages/mapping.html", {
         "request": request,
         "providers": await tm.list_providers(),
         "markets": await tm.list_markets(),
