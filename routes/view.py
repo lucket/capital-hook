@@ -40,7 +40,7 @@ async def dashboard_view(request: Request) -> _TemplateResponse:
 
         }
     }
-    return templates.TemplateResponse("pages/index.html", {"request": request, "data": data, "mode": settings.TRADE_MODE.value,})
+    return templates.TemplateResponse(request, "pages/index.html", {"request": request, "data": data, "mode": settings.TRADE_MODE.value,})
 
 @view.get("/positions", tags=["Positions"])
 async def position_view(request: Request) -> _TemplateResponse:
@@ -62,7 +62,7 @@ async def position_view(request: Request) -> _TemplateResponse:
     data = {
         "positions": positions
     }
-    return templates.TemplateResponse("components/positions.html", {"request": request, "data": data})
+    return templates.TemplateResponse(request, "components/positions.html", {"request": request, "data": data})
 
 
 @view.get("/portfolio", tags=["Positions"])
@@ -80,7 +80,7 @@ async def portfolio_view(request: Request) -> _TemplateResponse:
         },
         "mode": settings.TRADE_MODE.value,
     }
-    return templates.TemplateResponse("components/portfolio.html", {"request": request, "data": data})
+    return templates.TemplateResponse(request, "components/portfolio.html", {"request": request, "data": data})
 
 
 @view.get("/history", tags=["Trade History"])
@@ -92,7 +92,7 @@ async def trade_history_view(request: Request) -> _TemplateResponse:
     spreads = data.get("spreads", "0.00")
     pnl = data.get("pnl", "0.00")
     count = data.get("count", "0.00")
-    return templates.TemplateResponse("pages/history.html", {
+    return templates.TemplateResponse(request, "pages/history.html", {
         "request": request, 
         "trades": trades, 
         "profits": profits, 
@@ -113,7 +113,7 @@ async def trade_history_view(request: Request) -> _TemplateResponse:
     spreads = data.get("spreads", "0.00")
     pnl = data.get("pnl", "0.00")
     count = data.get("count", "0.00")
-    return templates.TemplateResponse("components/history.html", {
+    return templates.TemplateResponse(request, "components/history.html", {
         "request": request,
         "trades": trades,
         "profits": profits, 
@@ -131,4 +131,4 @@ async def dashboard_view(request: Request) -> _TemplateResponse:
     data = {
         "positions": {}
     }
-    return templates.TemplateResponse("pages/config.html", {"request": request, "data": data, "mode": settings.TRADE_MODE.value, "providers": await list_providers()})
+    return templates.TemplateResponse(request, "pages/config.html", {"request": request, "data": data, "mode": settings.TRADE_MODE.value, "providers": await list_providers()})

@@ -21,7 +21,7 @@ templates = Jinja2Templates(directory="views")
 async def login_page(request: Request):
     if is_authenticated(request):
         return RedirectResponse("/", status_code=302)
-    return templates.TemplateResponse("pages/login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(request, "pages/login.html", {"request": request, "error": None})
 
 
 @auth.post("/login", tags=["Auth"])
@@ -32,7 +32,7 @@ async def login_submit(request: Request):
     if not verify_password(password):
         client_ip = request.client.host if request.client else "unknown"
         await Logger.app_log(title="LOGIN_FAIL", message=f"Failed login attempt from {client_ip}")
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "pages/login.html",
             {"request": request, "error": "Invalid password"},
             status_code=401,
