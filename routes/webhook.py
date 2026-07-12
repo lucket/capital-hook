@@ -2,16 +2,18 @@ from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from model import TradingViewWebhookModel
 from memory import memory, settings
-from service.capital_api import is_market_closed
 from logger import Logger
 
 webhook = APIRouter()
 
 @webhook.post("/trading-view")
 async def tradingview_webhook_route(data: TradingViewWebhookModel, request: Request, background_task: BackgroundTasks):
-    
-    # validate whilested Tradingview IP Address
-    client_ip = request.headers.get("x-forwarded-for", request.client.host)
+
+    # validate whitelisted Tradingview IP Address using the transport-level peer
+    # address only: X-Forwarded-For is client-controlled and spoofable. Behind a
+    # reverse proxy, run uvicorn with --proxy-headers --forwarded-allow-ips so
+    # request.client reflects the real client.
+    client_ip = request.client.host if request.client else None
     if str(client_ip) not in settings.TRADINGVIEW_IP_ADDRESS:
         await Logger.app_log(title="TradingView_Webhook_Error", message=f"IP {client_ip} not whitelisted")
         return JSONResponse(status_code=403, content={"message": "IP not whitelisted"})

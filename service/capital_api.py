@@ -130,6 +130,12 @@ async def open_trade(epic: str, size: float, trade_direction: TradeDirection):
                 message=f"{size} size of {epic} ({reference})"
             )
             deal_id = await get_epic_deal_id(epic, size, trade_direction)
+            if not deal_id:
+                await Logger.app_log(
+                    title=f"OPEN_{trade_direction.value}_TRADE_ERR",
+                    message=f"Epic: {epic} | Opened ({reference}) but no deal_id resolved"
+                )
+                return False
             memory.update_deal_id(deal_id) # Update deal ID in memory
             return deal_id
         else:
@@ -170,7 +176,7 @@ async def close_trade(epic: str, size: float, deal_id: str, position_mode: Trade
         await Logger.app_log(title=f"{epic}_CLOSE_TRADE_ERR", message=str(e))
         if retry < 3:
             await asyncio.sleep(30)
-            return await close_trade(epic, size, deal_id, retry + 1)
+            return await close_trade(epic, size, deal_id, position_mode, retry + 1)
         return False
         
    
@@ -432,6 +438,8 @@ async def portfolio_balance():
             portfolio = data["accounts"][0]
             memory.portfolio = portfolio
             return portfolio
+        await Logger.app_log(title="PORTFOLIO_ERR", message=f"Status {response.status_code}: {response.text}")
+        return memory.portfolio
     except Exception as e:
         await Logger.app_log(title="PORTFOLIO_ERR", message=str(e))
         return memory.portfolio

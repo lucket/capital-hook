@@ -42,6 +42,8 @@ class HookedTradeExecution:
         self.loss = loss
         self.deal_id = None
         self.exit_criteria = exit_criteria
+        self.profit_loss = 0.0
+        self.percentage = 0.0
         self.leverage = memory.get_leverage(epic)
         self.trade_instrument = memory.get_trade_instrument(epic)
         self.position_mode = settings.TRADE_MODE
@@ -67,7 +69,7 @@ class HookedTradeExecution:
         elif self.trade_instrument == TradeInstrument.COMMODITIES:
             self.trade_size = round(self.trade_size, 1)
         elif self.trade_instrument == TradeInstrument.INDICES:
-            self.trade_size = TradeInstrument(self.trade_size) if self.trade_size > 2 else float(f"{self.trade_size:.2f}")
+            self.trade_size = round(self.trade_size) if self.trade_size > 2 else float(f"{self.trade_size:.2f}")
         else:
             self.trade_size = float(f"{self.trade_size:.2g}") if self.trade_size < 1 else round_trade_size(self.trade_size) if self.trade_size > 2 else float(f"{self.trade_size:.2f}")
         return leverage_size
