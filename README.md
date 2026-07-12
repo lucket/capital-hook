@@ -206,6 +206,17 @@ Capital.com epics often differ from the symbol your alert source uses (e.g. Trad
 
 If no mapping matches, the trade is rejected (`400 No ticker mapping`) — nothing is opened.
 
+### Resolution order: environment first, then DB
+
+There are two layers, checked in order:
+
+1. **Environment layer** — the `TICKER_CONFIG` JSON, parsed into memory at startup. It is checked **first** and **always wins**; it never touches the DB. In the Mapping page these rows are shown **locked** (🔒, read-only).
+2. **Database layer** — everything added via the Mapping page or `POST /api/ticker-config`. Used only as a **fallback** when the ticker isn't in the environment layer. These rows are editable/deletable.
+
+So a mapping defined in `TICKER_CONFIG` cannot be overridden from the UI — it's the version-controlled source of truth. The DB is for ad-hoc additions.
+
+**Refresh without a restart:** the **"↻ Reload env"** link on the Mapping page re-reads `TICKER_CONFIG` (and the `.env` file) live — `GET /mapping/reload-env` (link) or `POST /mapping/reload-env` (returns the refreshed sections).
+
 ### Data model
 
 Four tables (created automatically on startup):
@@ -221,11 +232,11 @@ Four tables (created automatically on startup):
 
 Three ways, all backed by the same tables:
 
-- **Mapping page (UI):** the **Mapping** tab in the dashboard is a simple CRUD editor for providers, markets, tickers and the mappings themselves. The mapping form has type-ahead ticker pickers that search the `ticker` table for the chosen provider.
-- **Environment:** set `TICKER_CONFIG` to the JSON blob; it is upserted into the DB on startup. Also set `DEFAULT_SOURCE_PROVIDER` / `EXECUTING_PROVIDER` if you want non-default codes. See `.env.example`.
+- **Environment (`TICKER_CONFIG`):** the authoritative, version-controlled layer — parsed into memory, wins over the DB, shown locked in the UI. Also set `DEFAULT_SOURCE_PROVIDER` / `EXECUTING_PROVIDER` for non-default codes. See `.env.example`. Reload live with the **"↻ Reload env"** link.
+- **Mapping page (UI):** CRUD editor for the **DB layer** (providers, markets, tickers, mappings). Env rows appear locked; DB rows are editable. The mapping form has type-ahead ticker pickers that search for the chosen provider.
 - **API (session-protected):**
-  - `GET /api/ticker-config` — export the current config (paste straight into `TICKER_CONFIG`).
-  - `POST /api/ticker-config` — import/upsert the same JSON shape.
+  - `GET /api/ticker-config` — export the **DB** config (paste into `TICKER_CONFIG` to promote it to env).
+  - `POST /api/ticker-config` — import/upsert into the **DB** layer.
 
 The **Config** page's payload generator can emit either an `epic`-based payload (default) or a `ticker`+`source` payload (choose "symbol by → ticker").
 

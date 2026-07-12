@@ -6,16 +6,20 @@
     </thead>
     <tbody>
       {% for m in markets %}
-      <tr>
+      <tr{% if m.locked %} class="env-row"{% endif %}>
         <td>{{ m.provider_id }}</td>
         <td>{{ m.market_id }}</td>
         <td>{{ m.description or '' }}</td>
         <td>
+          {% if m.locked %}
+          <span class="lock" title="From TICKER_CONFIG environment (read-only)">&#128274;</span>
+          {% else %}
           <button type="button" class="del-btn"
             hx-post="/mapping/market/delete" hx-ext="json-enc"
             hx-vals='{"provider_id": "{{ m.provider_id }}", "market_id": "{{ m.market_id }}"}'
             hx-target="#markets-section" hx-swap="outerHTML"
             hx-confirm="Delete market {{ m.provider_id }}:{{ m.market_id }}?">&times;</button>
+          {% endif %}
         </td>
       </tr>
       {% else %}

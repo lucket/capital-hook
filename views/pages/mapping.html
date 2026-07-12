@@ -1,6 +1,11 @@
 {% extends "layout/dashboard.html" %} {% block content %}
-<div class="header-large">
+<div class="header-large mapping-header">
   <h1>Ticker Mapping</h1>
+  <a class="reload-env"
+     href="/mapping/reload-env"
+     hx-post="/mapping/reload-env"
+     hx-target="#mapping-sections"
+     hx-swap="outerHTML">&#8635; Reload env{% if env_count %} ({{ env_count }}){% endif %}</a>
 </div>
 <div class="platform-container-cover">
   <div class="platform-container">
@@ -8,11 +13,9 @@
       <p class="mapping-hint">
         Map a source-provider ticker to the Capital.com epic used for execution.
         Alerts can then send <code>ticker</code> + <code>source</code> instead of a raw <code>epic</code>.
+        Rows marked &#128274; come from the <code>TICKER_CONFIG</code> environment and always win over the DB.
       </p>
-      {% include "components/mapping/providers.html" %}
-      {% include "components/mapping/markets.html" %}
-      {% include "components/mapping/tickers.html" %}
-      {% include "components/mapping/mappings.html" %}
+      {% include "components/mapping/sections.html" %}
     </div>
   </div>
 </div>

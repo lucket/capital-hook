@@ -6,15 +6,19 @@
     </thead>
     <tbody>
       {% for p in providers %}
-      <tr>
+      <tr{% if p.locked %} class="env-row"{% endif %}>
         <td>{{ p.id }}</td>
         <td>{{ p.name }}</td>
         <td>
+          {% if p.locked %}
+          <span class="lock" title="From TICKER_CONFIG environment (read-only)">&#128274;</span>
+          {% else %}
           <button type="button" class="del-btn"
             hx-post="/mapping/provider/delete" hx-ext="json-enc"
             hx-vals='{"id": "{{ p.id }}"}'
             hx-target="#providers-section" hx-swap="outerHTML"
             hx-confirm="Delete provider {{ p.id }}?">&times;</button>
+          {% endif %}
         </td>
       </tr>
       {% else %}
