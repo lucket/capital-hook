@@ -1,4 +1,5 @@
 import os
+import secrets
 from aiosqlite import Connection
 from httpx import AsyncClient
 from enums.trade import TradeMode
@@ -24,7 +25,13 @@ class Settings:
     CAPITAL_IDENTITY: str = os.getenv("CAPITAL_IDENTITY")
     CAPITAL_PASSWORD: str = os.getenv("CAPITAL_PASSWORD")
     CAPITAL_API_KEY: str =  os.getenv("CAPITAL_API_KEY")
-    
+
+    # Dashboard/API authentication
+    APP_PASSWORD: str = os.getenv("APP_PASSWORD")
+    # Secret used to sign session cookies. Set APP_SECRET_KEY in .env to keep
+    # sessions valid across restarts; otherwise a random per-process key is used.
+    APP_SECRET_KEY: str = os.getenv("APP_SECRET_KEY") or secrets.token_hex(32)
+
     TRADE_MODE: TradeMode
     
     TRADINGVIEW_IP_ADDRESS : list = ["52.89.214.238", "34.212.75.30", "54.218.53.128", "52.32.178.7", "127.0.0.1"]

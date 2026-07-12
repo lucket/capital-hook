@@ -92,6 +92,31 @@ CAPITAL_PASSWORD="YOUR_CAPITAL_COM_PASSWORD"
 CAPITAL_API_KEY="YOUR_CAPITAL_COM_API_KEY"
 ```
 
+### 5\. Configure Dashboard Authentication
+
+The dashboard and every `/api/*` endpoint are protected by a password login. Add these to your `.env` (see `.env.example`):
+
+```ini
+# Password required to sign in to the dashboard and call the API
+APP_PASSWORD="choose-a-strong-password"
+# Secret used to sign session cookies. Set a long random value to keep
+# sessions valid across restarts; if unset, a random key is generated per
+# process and existing sessions reset whenever the app restarts.
+APP_SECRET_KEY="a-long-random-string"
+```
+
+Generate a strong `APP_SECRET_KEY` with:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Notes:
+
+- Visiting any page while signed out redirects you to `/login`. Sign in with `APP_PASSWORD`; a signed, HTTP-only session cookie is set for 7 days. Use the **Logout** link in the nav to end the session.
+- The **TradingView webhook** (`/webhook/trading-view`) is intentionally **not** behind the login — it is authenticated separately by the TradingView IP whitelist, since TradingView cannot present a session cookie.
+- If you run the app behind a reverse proxy, start uvicorn with `--proxy-headers --forwarded-allow-ips=<proxy-ip>` so the webhook IP whitelist sees the real client address.
+
 ---
 
 ## ⚙️ Usage Guide
