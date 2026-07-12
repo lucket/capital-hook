@@ -1,4 +1,4 @@
-from pydantic import BaseModel, conint
+from pydantic import BaseModel, Field
 from enums.trade import TradeDirection, ExitType, TradeMode
 from typing import Annotated
 from typing import Literal, List, Optional
@@ -7,10 +7,10 @@ from typing import Literal, List, Optional
 class TradingViewWebhookModel(BaseModel):
     epic: str
     direction: TradeDirection
-    amount: Annotated[int, conint(ge=5)] 
+    amount: Annotated[int, Field(ge=5)]
     hook_name: str
-    profit: Annotated[int, conint(ge=5)] 
-    loss: Annotated[int, conint(ge=5)] 
+    profit: Annotated[int, Field(ge=5)]
+    loss: Annotated[int, Field(ge=5)]
     exit_criteria: List[ExitType]
 
 
@@ -18,9 +18,9 @@ class TradingViewWebhookModel(BaseModel):
 class HookPayloadModel(BaseModel):
     hook_name: str
     direction: TradeDirection
-    trade_amount: Annotated[float, conint(gt=10)]
-    stop_loss: Annotated[float, conint(gt=10)]
-    take_profit: Annotated[float, conint(gt=10)]
+    trade_amount: Annotated[float, Field(gt=10)]
+    stop_loss: Annotated[float, Field(gt=10)]
+    take_profit: Annotated[float, Field(gt=10)]
     take_profit_exit: Optional[Literal['on']] = None
     stop_loss_exit: Optional[Literal['on']] = None
     strategy_exit: Optional[Literal['on']] = None

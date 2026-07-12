@@ -38,6 +38,8 @@ class ResumeTradeExecution:
         self.stop_loss_price = loss_price
         self.deal_id = deal_id
         self.exit_criteria = exit_criteria
+        self.profit_loss = 0.0
+        self.percentage = 0.0
         self.opened_trade_at = datetime.strptime(entry_date, "%d %b %H:%M")
         self.position_mode = settings.TRADE_MODE
         
