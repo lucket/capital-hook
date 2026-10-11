@@ -7,7 +7,10 @@ from capital_hook.testing import FakeCapital
 
 @pytest.fixture
 def fake():
-    return FakeCapital()
+    """A fresh fake; after every test that used it, its own bookkeeping must still be consistent."""
+    f = FakeCapital()
+    yield f
+    f.check_invariants()
 
 
 @pytest.fixture
