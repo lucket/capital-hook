@@ -83,3 +83,44 @@ async def test_watch_can_give_up_after_a_number_of_polls():
         pass
 
     assert await script.watch(client, "GOLD", sleep=sleep, out=lambda line: None, max_polls=3) == "CLOSED"
+
+
+# ---------------------------------------------------------------- a dry run must never touch the real record of the held VIX position
+def _load_pause_module():
+    import importlib.util
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    spec = importlib.util.spec_from_file_location("demo_vix_pause_under_test", INTEGRATION / "test_demo_vix_pause.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_hold_file_is_the_real_one_only_for_a_real_run(tmp_path):
+    module = _load_pause_module()
+    assert module.hold_path({}, dry_run=False) == module.REAL_HOLD_FILE
+    dry_a, dry_b = module.hold_path({}, dry_run=True), module.hold_path({}, dry_run=True)
+    assert dry_a != module.REAL_HOLD_FILE and dry_a != dry_b and module.REAL_HOLD_FILE.parent not in dry_a.parents      # private, and not under the repo
+    explicit = str(tmp_path / "mine.json")
+    assert module.hold_path({"CAPITAL_DEMO_VIX_HOLD_PATH": explicit}, dry_run=True) == tmp_path / "mine.json"           # an explicit path always wins
+
+
+def test_a_dry_run_leaves_a_real_hold_record_alone(tmp_path):
+    """Whatever sits at the default location while the harness runs against the fake is untouched - run in a copy of the layout, never the real file."""
+    import os
+    import shutil
+    import subprocess
+    import sys
+    root = Path(__file__).resolve().parent.parent
+    copy = tmp_path / "repo"
+    shutil.copytree(root / "tests", copy / "tests", ignore=shutil.ignore_patterns("__pycache__", ".demo-*", "observed.json", ".journal-*"))
+    shutil.copytree(root / "src", copy / "src", ignore=shutil.ignore_patterns("__pycache__", "*.egg-info"))
+    shutil.copy(root / "pyproject.toml", copy / "pyproject.toml")
+    record = copy / "tests" / "integration" / ".demo-vix-hold.json"
+    record.write_text('{"deal_id": "THE-REAL-ONE", "opened_at_utc": "Sun 22:00:00"}')
+    env = {k: v for k, v in os.environ.items() if k not in ("CAPITAL_DEMO_IDENTITY", "CAPITAL_DEMO_PASSWORD", "CAPITAL_DEMO_API_KEY", "CAPITAL_DEMO_VIX_HOLD_PATH")}
+    env.update({"CAPITAL_HOOK_DEMO_DRY_RUN": "1", "CAPITAL_DEMO_EPIC": "GOLD", "PYTHONPATH": str(copy / "src"),
+                "CAPITAL_DEMO_JOURNAL_PATH": str(tmp_path / "j.json"), "CAPITAL_DEMO_OBSERVED_PATH": str(tmp_path / "o.json"), "CAPITAL_DEMO_SHAPES_PATH": str(tmp_path / "s.json")})
+    run = subprocess.run([sys.executable, "-m", "pytest", "-m", "demo", "tests/integration", "-q", "-p", "no:cacheprovider"], cwd=copy, env=env, capture_output=True, text=True)
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert record.read_text() == '{"deal_id": "THE-REAL-ONE", "opened_at_utc": "Sun 22:00:00"}'

@@ -65,7 +65,9 @@ async def main(epics: list[str], watching: bool = False) -> int:
             today = hours.get(now.strftime("%a").lower())
             print(f"{epic}  ({instrument.get('name')}, {instrument.get('type')})")
             print(f"  marketStatus : {snapshot.get('marketStatus')}      marketModes: {snapshot.get('marketModes')}")
-            print(f"  bid / offer  : {snapshot.get('bid')} / {snapshot.get('offer')}      price updated: {snapshot.get('updateTime')}")
+            bid, offer = snapshot.get("bid"), snapshot.get("offer")
+            spread = f"spread {(offer - bid) / bid * 100:.3f} %" if bid and offer else ""
+            print(f"  bid / offer  : {bid} / {offer}   {spread}      price updated: {snapshot.get('updateTime')}")
             print(f"  hours today  : {today}   (zone {hours.get('zone')})   library says {'CLOSED' if is_market_closed(hours, minutes=0, now=now) else 'open'}\n")
     finally:
         await client.aclose()
