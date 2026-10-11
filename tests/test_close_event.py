@@ -101,3 +101,21 @@ async def test_reject_next_applies_to_that_many_opens_and_then_stops(client, fak
 async def test_reject_next_defaults_to_market_closed(client, fake):
     fake.reject_next()
     assert (await client.confirm(await client.open_position("GOLD", 1, "SELL"), attempts=1, delay=0)).reason == "MARKET_CLOSED"
+
+
+async def test_the_opening_activity_carries_the_stop_and_profit_levels_set_with_the_order(client, fake):
+    """As on the real API (observed on DEMO): the activity details have stopLevel / profitLevel."""
+    deal_id = await open_deal(client, stop_level=1900, profit_level=2100)
+    entry = next(a for a in fake.activity if a["dealId"] == deal_id and a["type"] == "POSITION")
+    assert (entry["source"], entry["details"]["stopLevel"], entry["details"]["profitLevel"]) == ("USER", 1900, 2100)
+    plain = await open_deal(client)
+    assert "stopLevel" not in next(a for a in fake.activity if a["dealId"] == plain)["details"]
+
+
+async def test_a_profit_target_is_reported_with_the_opening_entry_as_user_and_the_close_as_tp(client, fake):
+    """The shape seen on DEMO: two POSITION / ACCEPTED entries for the deal, the opening one USER, the closing one TP at the execution level."""
+    deal_id = await open_deal(client, stop_level=1900, profit_level=2100)
+    fake.set_quote("GOLD", 2105.0, 2106.0)
+    entries = [(a["source"], a["details"]["level"]) for a in await client.get_activity(deal_id=deal_id, detailed=True)]
+    assert sorted(entries) == [("TP", 2105.0), ("USER", 2001.0)]
+    assert (await client.get_close_event(deal_id)).source == "TP"

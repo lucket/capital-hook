@@ -124,3 +124,156 @@ def test_a_dry_run_leaves_a_real_hold_record_alone(tmp_path):
     run = subprocess.run([sys.executable, "-m", "pytest", "-m", "demo", "tests/integration", "-q", "-p", "no:cacheprovider"], cwd=copy, env=env, capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
     assert record.read_text() == '{"deal_id": "THE-REAL-ONE", "opened_at_utc": "Sun 22:00:00"}'
+
+
+# ---------------------------------------------------------------- the exits test's helpers (they failed against the real API once: a stale price made the level invalid)
+def _load_exits_module():
+    import importlib.util
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    spec = importlib.util.spec_from_file_location("demo_exits_under_test", INTEGRATION / "test_demo_exits.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_bracket_puts_the_stop_and_the_target_on_the_sides_each_direction_needs():
+    exits = _load_exits_module()
+    buy = exits.bracket("BUY", 100.00, 100.10, 0.001, 2)
+    sell = exits.bracket("SELL", 100.00, 100.10, 0.001, 2)
+    assert buy == {"stop_level": 99.9, "profit_level": 100.2} and sell == {"stop_level": 100.2, "profit_level": 99.9}
+    assert buy["stop_level"] < 100.00 < 100.10 < buy["profit_level"] and sell["profit_level"] < 100.00 < 100.10 < sell["stop_level"]
+
+
+async def test_the_exits_test_reads_the_price_when_it_orders_not_when_the_session_started():
+    from capital_hook import CapitalClient
+    from capital_hook.testing import FakeCapital
+    exits = _load_exits_module()
+    fake = FakeCapital()
+    client = CapitalClient("me", "pw", "key", http=fake.client())
+    assert await exits.fresh_quote(client, "GOLD") == (2000.0, 2001.0)
+    fake.set_quote("GOLD", 2010.0, 2011.0)
+    assert await exits.fresh_quote(client, "GOLD") == (2010.0, 2011.0)
+
+
+async def _bracket_world():
+    from capital_hook import CapitalClient
+    from capital_hook.testing import FakeCapital
+    exits = _load_exits_module()
+    fake = FakeCapital()
+    client = CapitalClient("me", "pw", "key", http=fake.client())
+
+    class Tracker:
+        positions = set()
+
+        async def open(self, epic, size, direction, **options):
+            reference = await client.open_position(epic, size, direction, **options)
+            return reference, await client.confirm(reference, attempts=1, delay=0)
+    return exits, fake, client, Tracker()
+
+
+async def test_a_level_refused_as_too_close_is_retried_wider_at_the_price_of_that_moment():
+    exits, fake, client, tracker = await _bracket_world()
+    fake.fail_next("POST", "/api/v1/positions", status=400, error_code="error.invalid.takeprofit.minvalue: 2003.5")
+    fake.fail_next("POST", "/api/v1/positions", status=400, error_code="error.invalid.stoploss.maxvalue: 1996.1")
+    confirmation, levels, attempts, price, gap = await exits.open_with_bracket(client, tracker, "GOLD", 0.1, "BUY", 2, 0.0002)
+    assert confirmation.accepted and len(attempts) == 2 and gap == 0.0002 * 1.5 ** 2
+    assert [a["gap_pct"] for a in attempts] == [0.02, 0.03] and attempts[0]["refused"].startswith("error.invalid.takeprofit")
+    assert levels["stop_level"] < 2000.0 < 2001.0 < levels["profit_level"] and (fake.meta[confirmation.position_deal_id]["stopLevel"], fake.meta[confirmation.position_deal_id]["profitLevel"]) == (levels["stop_level"], levels["profit_level"])
+
+
+async def test_three_refusals_give_up_and_report_every_attempt():
+    exits, fake, client, tracker = await _bracket_world()
+    fake.fail_next("POST", "/api/v1/positions", status=400, error_code="error.invalid.takeprofit.minvalue: 2003.5", times=5)
+    confirmation, levels, attempts, price, gap = await exits.open_with_bracket(client, tracker, "GOLD", 0.1, "SELL", 2, 0.0002)
+    assert confirmation is None and len(attempts) == 3 and fake.positions == {}
+
+
+async def test_an_error_that_is_not_about_the_levels_is_raised_not_retried():
+    import pytest as _pytest
+
+    from capital_hook import APIError
+    exits, fake, client, tracker = await _bracket_world()
+    fake.fail_next("POST", "/api/v1/positions", status=503, error_code="error.unavailable")
+    with _pytest.raises(APIError) as exc:
+        await exits.open_with_bracket(client, tracker, "GOLD", 0.1, "BUY", 2, 0.0002)
+    assert exc.value.status_code == 503
+
+
+# ---------------------------------------------------------------- demo_cleanup.py --record-hold
+def _load_cleanup_module():
+    import importlib.util
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    spec = importlib.util.spec_from_file_location("demo_cleanup_under_test", INTEGRATION / "demo_cleanup.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_record_hold_rebuilds_the_record_for_exactly_one_open_position(tmp_path):
+    import json
+    cleanup = _load_cleanup_module()
+    path = tmp_path / ".demo-vix-hold.json"
+    message = cleanup.hold_record([{"deal_id": "D1"}], path)
+    assert "recorded D1" in message and json.loads(path.read_text())["deal_id"] == "D1"
+
+
+def test_record_hold_refuses_when_it_cannot_tell_which_position_is_the_held_one(tmp_path):
+    cleanup = _load_cleanup_module()
+    path = tmp_path / "hold.json"
+    assert "found 0" in cleanup.hold_record([], path) and "found 2" in cleanup.hold_record([{"deal_id": "A"}, {"deal_id": "B"}], path) and not path.exists()
+
+
+def test_record_hold_never_overwrites_a_record_that_names_another_deal(tmp_path):
+    cleanup = _load_cleanup_module()
+    path = tmp_path / "hold.json"
+    path.write_text('{"deal_id": "OTHER"}')
+    assert "different deal" in cleanup.hold_record([{"deal_id": "D1"}], path) and path.read_text() == '{"deal_id": "OTHER"}'
+    assert "recorded OTHER" in cleanup.hold_record([{"deal_id": "OTHER"}], path)
+
+
+async def _cleanup_world(tmp_path):
+    from capital_hook import CapitalClient
+    from capital_hook.testing import FakeCapital
+    cleanup = _load_cleanup_module()
+    fake = FakeCapital()
+    client = CapitalClient("me", "pw", "key", http=fake.client())
+    return cleanup, fake, client, [], tmp_path / "hold.json"
+
+
+async def test_cleanup_lists_a_position_and_a_working_order_with_the_fields_the_client_really_returns(tmp_path):
+    """It once crashed with KeyError: 'level' - a position's flat dict has open_price, not level."""
+    cleanup, fake, client, lines, hold = await _cleanup_world(tmp_path)
+    await client.open_position("GOLD", 2, "BUY")
+    await client.create_working_order("GOLD", "BUY", 1, 1900)
+    assert await cleanup.run(client, "GOLD", False, False, hold, lines.append) == 0
+    text = "\n".join(lines)
+    assert "GOLD on the DEMO account: 1 position(s), 1 working order(s)" in text and "opened at 2001.0" in text and "at level 1900.0" in text
+    assert "nothing changed" in text and len(fake.positions) == 1 and len(fake.orders) == 1
+
+
+async def test_cleanup_with_yes_closes_and_cancels_only_that_epic(tmp_path):
+    cleanup, fake, client, lines, hold = await _cleanup_world(tmp_path)
+    fake.set_quote("US100", 15000.0, 15001.0)
+    fake.markets["US100"] = "INDICES"
+    await client.open_position("GOLD", 2, "BUY")
+    await client.create_working_order("GOLD", "BUY", 1, 1900)
+    await client.open_position("US100", 1, "BUY")
+    await cleanup.run(client, "GOLD", True, False, hold, lines.append)
+    assert [p["epic"] for p in fake.positions.values()] == ["US100"] and fake.orders == {} and "closed / cancelled." in lines
+
+
+async def test_cleanup_record_hold_lists_then_records_and_changes_nothing_else(tmp_path):
+    import json
+    cleanup, fake, client, lines, hold = await _cleanup_world(tmp_path)
+    await client.open_position("GOLD", 2, "BUY")
+    (deal_id,) = fake.positions
+    await cleanup.run(client, "GOLD", False, True, hold, lines.append)
+    assert json.loads(hold.read_text())["deal_id"] == deal_id and f"recorded {deal_id}" in lines[-1] and len(fake.positions) == 1
+
+
+async def test_cleanup_with_nothing_open_says_so_quietly(tmp_path):
+    cleanup, fake, client, lines, hold = await _cleanup_world(tmp_path)
+    await cleanup.run(client, "GOLD", False, False, hold, lines.append)
+    assert lines == ["GOLD on the DEMO account: 0 position(s), 0 working order(s)"]

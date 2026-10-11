@@ -47,8 +47,9 @@ ASSUMPTIONS = {
                "error.unsupported.in.fake). With hedging on, every open creates its own position.",
     "session tokens": "A new login invalidates the tokens of the previous session.",
     "close activity": "A close is logged as POSITION / ACCEPTED with source USER, SL, TP or CLOSE_OUT and details.level = the closing price; the "
-                      "documented sources are CLOSE_OUT, DEALER, SL, SYSTEM, TP, USER. That details.level of the CLOSE entry is the execution level is "
-                      "assumed until a DEMO run confirms it (tests/integration/test_demo_exits.py).",
+                      "documented sources are CLOSE_OUT, DEALER, SL, SYSTEM, TP, USER. CONFIRMED on DEMO (2026-10-11, US100) for TP and for a close "
+                      "request (USER): the close entry carries the execution level (a TP at 30961.3 closed at exactly 30961.3 in a quiet market) and the "
+                      "opening entry has source USER. NOT yet observed: source SL, and a fill beyond the level after a gap.",
     "close/update confirmations": "Observed: GET /confirms/p_<id> after a close is ACCEPTED with status CLOSED. The fake adds profit and an "
                                   "affectedDeals CLOSED entry (assumed); a confirmation for an update is NOT modelled (404).",
     "id format": "The real API answers 400 error.invalid.dealId for a malformed id and 404 error.not-found.dealId for a well-formed unknown one; "
@@ -510,7 +511,8 @@ class FakeCapital:
                               "created": self._stamp(), "order": None}
         self._confirmation(reference, body, level, deal_id, None, order_id=self._new_id("OD"))
         self._log("POSITION", "ACCEPTED", deal_id, epic, dealReference=reference, size=float(body["size"]), direction=body["direction"], level=level,
-                  openPrice=level, currency="USD", guaranteedStop=False, marketName=epic)
+                  openPrice=level, currency="USD", guaranteedStop=False, marketName=epic,
+                  **{key: body[name] for name, key in (("stopLevel", "stopLevel"), ("profitLevel", "profitLevel")) if body.get(name) is not None})
         return httpx.Response(200, json={"dealReference": reference})
 
     def _one_position(self, method: str, deal_id: str, body) -> httpx.Response:
