@@ -7,6 +7,7 @@ from pathlib import Path
 import demo_harness as h
 
 ROOT = Path(__file__).resolve().parent.parent
+DEMO_TESTS = sum(path.read_text().count("\nasync def test_") + path.read_text().count("\ndef test_") for path in (ROOT / "tests" / "integration").glob("test_demo_*.py"))   # however many there are
 
 
 def test_the_demo_suite_passes_end_to_end_against_the_fake(tmp_path):
@@ -18,7 +19,7 @@ def test_the_demo_suite_passes_end_to_end_against_the_fake(tmp_path):
     run = subprocess.run([sys.executable, "-m", "pytest", "-m", "demo", "tests/integration", "-q", "-p", "no:cacheprovider"],
                          cwd=ROOT, env=env, capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
-    assert "10 passed" in run.stdout and "skipped" not in run.stdout
+    assert f"{DEMO_TESTS} passed" in run.stdout and "skipped" not in run.stdout
     assert (tmp_path / "observed.json").exists() and (tmp_path / "shapes.json").exists()
     assert (tmp_path / "journal.json").read_text() == "[]"                        # nothing left behind
 
@@ -28,4 +29,4 @@ def test_without_the_opt_in_the_demo_suite_skips_everything(tmp_path):
     env["CAPITAL_DEMO_OBSERVED_PATH"] = str(tmp_path / "observed.json")
     run = subprocess.run([sys.executable, "-m", "pytest", "-m", "demo", "tests/integration", "-q", "-p", "no:cacheprovider"],
                          cwd=ROOT, env=env, capture_output=True, text=True)
-    assert run.returncode == 0 and "10 skipped" in run.stdout and "passed" not in run.stdout
+    assert run.returncode == 0 and f"{DEMO_TESTS} skipped" in run.stdout and "passed" not in run.stdout

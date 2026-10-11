@@ -40,7 +40,10 @@ async def demo_fake(demo_gate):
         yield None
         return
     fake = FakeCapital()
-    fake.markets = {"GOLD": "COMMODITIES", "US100": "INDICES"}
+    fake.markets = {"GOLD": "COMMODITIES", "US100": "INDICES", "VIX": "INDICES"}
+    fake.set_quote("VIX", 16.4, 16.6)
+    fake.min_deal_size["VIX"] = 0.1
+    fake.hours = {day: ["00:00 - 23:59", "23:59 - 00:00"] for day in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")} | {"zone": "UTC"}   # open all week
     yield fake
 
 
