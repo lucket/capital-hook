@@ -86,6 +86,7 @@ class FakeCapital:
         self.quote = {"GOLD": (2000.0, 2001.0)}   # epic -> (bid, ask)
         self.markets = {"GOLD": "COMMODITIES", "US100": "INDICES"}
         self.min_deal_size = {}        # epic -> minimum deal size (default 0.01); a smaller order is answered 400 error.invalid.size.minvalue
+        self.size_increment = {}       # epic -> minSizeIncrement reported in the dealing rules (default: the minimum size); NOT enforced (its error code is unobserved)
         self.max_deal_size = {}        # epic -> maximum deal size (default 1,000,000); a larger one is answered 400 error.invalid.size.maxvalue
         self.market_status = {}        # epic -> "TRADEABLE" (default) | "CLOSED" ...; an explicit entry always wins
         self.follow_opening_hours = False   # True: a market is CLOSED outside ``hours`` (UTC, by the ``now`` clock) and orders are rejected then
@@ -165,6 +166,11 @@ class FakeCapital:
     def lose_response_next(self, method: str, path_prefix: str, times: int = 1) -> None:
         """The next matching requests are executed by the server, but the client gets a timeout instead of the answer."""
         self._faults.append({"kind": "lose", "method": method, "prefix": path_prefix, "times": times})
+
+    def lose_request_next(self, method: str, path_prefix: str, times: int = 1) -> None:
+        """The next matching requests never reach the server (nothing happens) and the client gets a timeout - indistinguishable, for the
+        client, from ``lose_response_next``, which is the point."""
+        self._faults.append({"kind": "drop", "method": method, "prefix": path_prefix, "times": times})
 
     def _take_fault(self, method: str, path: str):
         for fault in self._faults:
@@ -361,7 +367,7 @@ class FakeCapital:
                              "minStepDistance": {"unit": "POINTS", "value": 0.01},
                              "minStopOrProfitDistance": {"unit": "PERCENTAGE", "value": 0.01},
                              "maxStopOrProfitDistance": {"unit": "PERCENTAGE", "value": 100},
-                             "minSizeIncrement": {"unit": "POINTS", "value": self.min_deal_size.get(epic, 0.01)}},
+                             "minSizeIncrement": {"unit": "POINTS", "value": self.size_increment.get(epic, self.min_deal_size.get(epic, 0.01))}},
             "snapshot": {"marketStatus": self.status_of(epic), "bid": bid, "offer": ask},
         }
 
@@ -377,6 +383,8 @@ class FakeCapital:
         fault = self._take_fault(method, path)
         if fault and fault["kind"] == "error":
             return self._error(fault["status"], fault["code"])
+        if fault and fault["kind"] == "drop":
+            raise httpx.ConnectTimeout("request lost before the server saw it", request=request)
         response = self._dispatch(method, path, request, body)
         if fault and fault["kind"] == "lose":
             raise httpx.ReadTimeout("response lost after the server executed the request", request=request)
