@@ -46,6 +46,9 @@ ASSUMPTIONS = {
                "returns no affectedDeals. Assumed: oldest positions first, source USER; only exact-size offsets are modelled (others: 400 "
                "error.unsupported.in.fake). With hedging on, every open creates its own position.",
     "session tokens": "A new login invalidates the tokens of the previous session.",
+    "close activity": "A close is logged as POSITION / ACCEPTED with source USER, SL, TP or CLOSE_OUT and details.level = the closing price; the "
+                      "documented sources are CLOSE_OUT, DEALER, SL, SYSTEM, TP, USER. That details.level of the CLOSE entry is the execution level is "
+                      "assumed until a DEMO run confirms it (tests/integration/test_demo_exits.py).",
     "close/update confirmations": "Observed: GET /confirms/p_<id> after a close is ACCEPTED with status CLOSED. The fake adds profit and an "
                                   "affectedDeals CLOSED entry (assumed); a confirmation for an update is NOT modelled (404).",
     "id format": "The real API answers 400 error.invalid.dealId for a malformed id and 404 error.not-found.dealId for a well-formed unknown one; "
@@ -95,6 +98,7 @@ class FakeCapital:
         self.confirmations = {}   # dealReference -> confirmation body
         self.meta = {}            # dealId -> {"dealReference", "stopLevel", "profitLevel", "created", "order"}
         self._issued = set()      # deal ids this fake handed out (as opposed to ones a test wrote into `positions`)
+        self._forced_rejections = []   # reasons for the next opens (see reject_next)
         self.unfiltered_markets_fails = False   # True: GET /markets without searchTerm / epics answers 500, as the DEMO server does
         self.queries = []         # (method, path, query params) of every request that carried a query string
         self._offset_orders = set()   # ids of orders that closed positions instead of opening one
@@ -149,6 +153,14 @@ class FakeCapital:
     def fail_next(self, method: str, path_prefix: str, status: int = 500, error_code: str = "error.server", times: int = 1) -> None:
         """The next ``times`` requests matching method and path prefix are answered with an error and change nothing."""
         self._faults.append({"kind": "error", "method": method, "prefix": path_prefix, "status": status, "code": error_code, "times": times})
+
+    def close_out(self, deal_id: str) -> None:
+        """The broker closes a position by itself (margin call): realised at the current price, logged with source ``CLOSE_OUT``."""
+        self._close(deal_id, "CLOSE_OUT")
+
+    def reject_next(self, reason: str = "MARKET_CLOSED", times: int = 1) -> None:
+        """The next ``times`` position opens are answered 200 with a reference, then REJECTED with ``reason`` (nothing opens)."""
+        self._forced_rejections += [reason] * times
 
     def lose_response_next(self, method: str, path_prefix: str, times: int = 1) -> None:
         """The next matching requests are executed by the server, but the client gets a timeout instead of the answer."""
@@ -226,7 +238,8 @@ class FakeCapital:
                   "close_level": close_level, "pnl": pnl, "source": source, "time": self._stamp()}
         self.closed.append(record)
         reference = ref or f"p_{deal_id}"
-        self._log("POSITION", "ACCEPTED", deal_id, p["epic"], source=source, dealReference=reference)
+        self._log("POSITION", "ACCEPTED", deal_id, p["epic"], source=source, dealReference=reference, level=close_level, openPrice=p["level"],
+                  size=p["size"], direction="SELL" if p["direction"] == "BUY" else "BUY", currency="USD", guaranteedStop=False, marketName=p["epic"])
         self.confirmations[reference] = {
             "date": self._stamp() + ".000", "status": "CLOSED", "dealStatus": "ACCEPTED", "epic": p["epic"],
             "dealReference": reference, "dealId": deal_id, "affectedDeals": [{"dealId": deal_id, "status": "CLOSED"}], "level": close_level,
@@ -467,7 +480,7 @@ class FakeCapital:
         if bad is not None:
             return bad
         reference = self._new_reference("o")
-        reason = self._reject_reason(epic, float(body["size"]), level)
+        reason = self._forced_rejections.pop(0) if self._forced_rejections else self._reject_reason(epic, float(body["size"]), level)
         if reason:
             self._confirmation(reference, body, level, None, reason)
             self._log("POSITION", "REJECTED", "", epic, dealReference=reference, reason=reason)
@@ -487,7 +500,8 @@ class FakeCapital:
         self.meta[deal_id] = {"dealReference": f"p_{deal_id}", "stopLevel": body.get("stopLevel"), "profitLevel": body.get("profitLevel"),
                               "created": self._stamp(), "order": None}
         self._confirmation(reference, body, level, deal_id, None, order_id=self._new_id("OD"))
-        self._log("POSITION", "ACCEPTED", deal_id, epic, dealReference=reference, size=float(body["size"]), direction=body["direction"], level=level)
+        self._log("POSITION", "ACCEPTED", deal_id, epic, dealReference=reference, size=float(body["size"]), direction=body["direction"], level=level,
+                  openPrice=level, currency="USD", guaranteedStop=False, marketName=epic)
         return httpx.Response(200, json={"dealReference": reference})
 
     def _one_position(self, method: str, deal_id: str, body) -> httpx.Response:

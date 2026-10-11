@@ -60,3 +60,47 @@ class Confirmation:
             level=num("level"),
             raw=data,
         )
+
+
+@dataclass(frozen=True)
+class CloseEvent:
+    """How a position ended, from the account activity (``GET /history/activity``).
+
+    ``source`` says who closed it: ``SL`` (stop loss), ``TP`` (take profit), ``USER`` (a close request, i.e. this application),
+    ``CLOSE_OUT`` (the broker closed it because of margin), ``SYSTEM`` or ``DEALER``. ``level`` is the price it was closed at, so
+    ``level_vs(stop_level)`` shows whether the price jumped past a stop before it could execute.
+    """
+
+    deal_id: str
+    source: str
+    time: str | None
+    level: float | None
+    open_level: float | None
+    raw: dict
+
+    @property
+    def by_stop(self) -> bool:
+        return self.source == "SL"
+
+    @property
+    def by_profit_target(self) -> bool:
+        return self.source == "TP"
+
+    @property
+    def by_broker(self) -> bool:
+        return self.source in ("CLOSE_OUT", "SYSTEM", "DEALER")
+
+    def level_vs(self, level: float) -> float | None:
+        """``closing price - level``: how far from a stop / profit level the position really closed (None if the price is unknown)."""
+        return None if self.level is None else self.level - level
+
+    @classmethod
+    def from_activity(cls, entry: dict) -> "CloseEvent":
+        details = entry.get("details") or {}
+
+        def num(key):
+            value = details.get(key)
+            return float(value) if value is not None else None
+
+        return cls(deal_id=entry.get("dealId", ""), source=entry.get("source", ""), time=entry.get("dateUTC"),
+                   level=num("level"), open_level=num("openPrice"), raw=entry)
