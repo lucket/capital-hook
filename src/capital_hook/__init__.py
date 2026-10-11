@@ -12,7 +12,7 @@ See ``capital_hook.hours`` for opening-hours helpers and ``capital_hook.testing`
 for an in-memory fake of the API to test applications against.
 """
 from .client import DEMO_HOST, LIVE_HOST, STREAM_URL, CapitalClient
-from .enums import TradeDirection, TradeInstrument, TradeMode
+from .enums import TradeDirection, TradeInstrument, TradeMode, WorkingOrderType
 from .errors import APIError, AuthError, CapitalError, StreamError
 from .models import Confirmation
 from .hours import is_closing_for_day, is_closing_for_week, is_market_closed
@@ -22,7 +22,7 @@ __version__ = "0.2.0"
 
 __all__ = [
     "CapitalClient", "PriceStream", "Quote", "Confirmation",
-    "TradeDirection", "TradeInstrument", "TradeMode",
+    "TradeDirection", "TradeInstrument", "TradeMode", "WorkingOrderType",
     "CapitalError", "AuthError", "APIError", "StreamError",
     "is_market_closed", "is_closing_for_day", "is_closing_for_week",
     "LIVE_HOST", "DEMO_HOST", "STREAM_URL", "__version__",

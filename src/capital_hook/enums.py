@@ -14,6 +14,12 @@ class TradeMode(Enum):
     LIVE = "LIVE"
 
 
+class WorkingOrderType(Enum):
+    """Kind of working order: LIMIT (better price than the market) or STOP (worse price, i.e. breakout)."""
+    LIMIT = "LIMIT"
+    STOP = "STOP"
+
+
 class TradeInstrument(Enum):
     """Capital.com `instrumentType` of a market."""
     CRYPTOCURRENCIES = "CRYPTOCURRENCIES"

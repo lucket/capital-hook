@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Iterable
 
 import httpx
 
-from .enums import TradeDirection, TradeMode
+from .enums import TradeDirection, TradeMode, WorkingOrderType
 from .errors import APIError, AuthError, CapitalError
 from .models import Confirmation
 
@@ -30,6 +31,15 @@ def _direction(direction: "TradeDirection | str") -> str:
 def _number(value: float) -> str:
     """A plain decimal string (never scientific notation such as '1e-05')."""
     return format(Decimal(str(value)), "f")
+
+
+def _timestamp(value: "datetime | str") -> str:
+    """Capital.com's UTC timestamp format, ``YYYY-MM-DDTHH:MM:SS`` (aware datetimes are converted to UTC)."""
+    if isinstance(value, str):
+        return value
+    if value.tzinfo is not None:
+        value = value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _order_fields(*, stop_level=None, profit_level=None, stop_distance=None, profit_distance=None,
@@ -338,3 +348,97 @@ class CapitalClient:
     async def close_position(self, deal_id: str) -> dict:
         """Close a position; returns Capital.com's answer (contains `dealReference`)."""
         return (await self._request("DELETE", f"/api/v1/positions/{deal_id}")).json()
+
+    # ---- working orders ----
+    @staticmethod
+    def _flat_working_order(item: dict) -> dict:
+        data = item["workingOrderData"]
+        flat = {
+            "deal_id": data["dealId"],
+            "epic": data["epic"],
+            "direction": data["direction"],
+            "size": float(data["orderSize"]),
+            "level": float(data["orderLevel"]),
+            "type": data["orderType"],
+            "time_in_force": data.get("timeInForce"),
+            "good_till_date": data.get("goodTillDateUTC") or data.get("goodTillDate"),
+            "created_date": data.get("createdDateUTC") or data.get("createdDate"),
+        }
+        for key, source in (("stop_distance", "stopDistance"), ("profit_distance", "profitDistance")):
+            if data.get(source) is not None:
+                flat[key] = data[source]
+        return flat
+
+    async def get_working_orders(self) -> list[dict]:
+        """Pending (limit / stop) orders as flat dicts: deal_id, epic, direction, size, level, type, time_in_force,
+        good_till_date, created_date (+ stop_distance / profit_distance when set)."""
+        raw = (await self._request("GET", "/api/v1/workingorders")).json().get("workingOrders", [])
+        return [self._flat_working_order(item) for item in raw]
+
+    async def create_working_order(
+        self,
+        epic: str,
+        direction: TradeDirection | str,
+        size: float,
+        level: float,
+        type: WorkingOrderType | str = WorkingOrderType.LIMIT,
+        *,
+        good_till_date: "datetime | str | None" = None,
+        **order_options,
+    ) -> str:
+        """Place a limit / stop order at ``level``; returns the deal reference (see :meth:`confirm`).
+
+        ``good_till_date`` (UTC) makes it expire; without it the order stays until cancelled. A date in the past is
+        refused by Capital.com (400 ``error.not-in-future.goodTillDate``). ``order_options`` as in :meth:`open_position`.
+        """
+        kind = (type.value if isinstance(type, WorkingOrderType) else str(type)).upper()
+        if kind not in ("LIMIT", "STOP"):
+            raise ValueError(f"type must be LIMIT or STOP, got {type!r}")
+        body = {"epic": epic, "direction": _direction(direction), "size": _number(size), "level": level, "type": kind, **_order_fields(**order_options)}
+        if good_till_date is not None:
+            body["goodTillDate"] = _timestamp(good_till_date)
+        return (await self._request("POST", "/api/v1/workingorders", json=body)).json()["dealReference"]
+
+    async def update_working_order(self, deal_id: str, *, level: float | None = None, good_till_date: "datetime | str | None" = None, **order_options) -> str:
+        """Change the level, expiry or stop / profit of a pending order; at least one setting is required."""
+        fields = _order_fields(**order_options)
+        if level is not None:
+            fields["level"] = level
+        if good_till_date is not None:
+            fields["goodTillDate"] = _timestamp(good_till_date)
+        if not fields:
+            raise ValueError("update_working_order needs at least one of level, good_till_date or a stop / profit setting")
+        return (await self._request("PUT", f"/api/v1/workingorders/{deal_id}", json=fields)).json()["dealReference"]
+
+    async def cancel_working_order(self, deal_id: str) -> str:
+        """Cancel a pending order; returns the deal reference. Unknown / already gone: 404 ``error.not-found.dealId``."""
+        return (await self._request("DELETE", f"/api/v1/workingorders/{deal_id}")).json()["dealReference"]
+
+    # ---- history ----
+    async def get_activity(
+        self,
+        *,
+        from_: "datetime | str | None" = None,
+        to: "datetime | str | None" = None,
+        last_period: int | None = None,
+        detailed: bool = False,
+        deal_id: str | None = None,
+        filter: str | None = None,
+    ) -> list[dict]:
+        """Account activity (positions, working orders, edits) with each deal's ``status``
+        (ACCEPTED, EXECUTED, REJECTED, CANCELLED, EXPIRED, ...). ``from_`` / ``to`` are UTC, at most 1 day apart;
+        ``last_period`` is in seconds (default 600, max 86400); ``filter`` is a FIQL expression."""
+        params = {}
+        if from_ is not None:
+            params["from"] = _timestamp(from_)
+        if to is not None:
+            params["to"] = _timestamp(to)
+        if last_period is not None:
+            params["lastPeriod"] = last_period
+        if detailed:
+            params["detailed"] = "true"
+        if deal_id is not None:
+            params["dealId"] = deal_id
+        if filter is not None:
+            params["filter"] = filter
+        return (await self._request("GET", "/api/v1/history/activity", params=params)).json().get("activities", [])

@@ -16,8 +16,13 @@ and an unknown deal is a 404 ``error.not-found.dealId``.
 import itertools
 import json
 import uuid
+from datetime import datetime, timezone
 
 import httpx
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class FakeCapital:
@@ -42,6 +47,9 @@ class FakeCapital:
         self.hours = {"mon": ["00:00 - 23:59"], "tue": ["00:00 - 23:59"], "wed": ["00:00 - 23:59"],
                       "thu": ["00:00 - 23:59"], "fri": ["00:00 - 21:55"], "sat": [], "sun": ["23:00 - 23:59"]}
         # side tables: richer per-deal data that must not change the shape of `positions`
+        self.now = _utcnow        # clock (naive UTC); replace with a callable to control time
+        self.orders = {}          # working order dealId -> {"epic","direction","size","level","type","goodTillDate","created"}
+        self.activity = []        # history/activity records, oldest first
         self.confirmations = {}   # dealReference -> confirmation body
         self.meta = {}            # dealId -> {"dealReference", "stopLevel", "profitLevel"}
 
@@ -56,6 +64,22 @@ class FakeCapital:
     def _new_reference(self, prefix: str = "o") -> str:
         return f"{prefix}_{uuid.UUID(int=next(self._refs))}"
 
+    def _log(self, kind: str, status: str, deal_id: str, epic: str, source: str = "USER", **details) -> None:
+        stamp = self.now().strftime("%Y-%m-%dT%H:%M:%S")
+        self.activity.append({"date": stamp, "dateUTC": stamp, "epic": epic, "dealId": deal_id, "source": source, "type": kind,
+                              "status": status, "details": details})
+
+    @staticmethod
+    def _matches(record: dict, expression: str) -> bool:
+        """A small FIQL subset: clauses joined by ';' (AND), each ``field==a,b`` or ``field!=a,b``."""
+        for clause in filter(None, expression.split(";")):
+            op = "!=" if "!=" in clause else "=="
+            field, _, values = clause.partition(op)
+            hit = record.get(field) in values.split(",")
+            if hit == (op == "!="):
+                return False
+        return True
+
     @staticmethod
     def _error(status: int, code: str) -> httpx.Response:
         return httpx.Response(status, json={"errorCode": code})
@@ -68,6 +92,14 @@ class FakeCapital:
             if meta.get(key) is not None:
                 position[key] = meta[key]
         return {"market": {"epic": p["epic"]}, "position": position}
+
+    def _order_body(self, deal_id: str, o: dict) -> dict:
+        data = {"dealId": deal_id, "direction": o["direction"], "epic": o["epic"], "orderSize": o["size"], "orderLevel": o["level"],
+                "orderType": o["type"], "timeInForce": "GOOD_TILL_DATE" if o["goodTillDate"] else "GOOD_TILL_CANCELLED",
+                "createdDateUTC": o["created"]}
+        if o["goodTillDate"]:
+            data["goodTillDateUTC"] = o["goodTillDate"]
+        return {"workingOrderData": data, "marketData": {"epic": o["epic"]}}
 
     # ---- routing ----
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -127,6 +159,7 @@ class FakeCapital:
                 "affectedDeals": [{"dealId": deal_id, "status": "OPENED"}], "level": level, "size": float(body["size"]),
                 "direction": body["direction"], "guaranteedStop": bool(body.get("guaranteedStop")), "trailingStop": bool(body.get("trailingStop")),
             }
+            self._log("POSITION", "ACCEPTED", deal_id, body["epic"], dealReference=reference, size=float(body["size"]), direction=body["direction"], level=level)
             return httpx.Response(200, json={"dealReference": reference})
         if path.startswith("/api/v1/positions/") and method in ("GET", "PUT", "DELETE"):
             deal_id = path.rsplit("/", 1)[1]
@@ -141,10 +174,58 @@ class FakeCapital:
                     if key in body:
                         self.meta.setdefault(deal_id, {})[key] = body[key]
                 return httpx.Response(200, json={"dealReference": f"p_{deal_id}"})
+            epic = self.positions[deal_id]["epic"]
             del self.positions[deal_id]
             self.meta.pop(deal_id, None)
             self.deleted.append(deal_id)
+            self._log("POSITION", "ACCEPTED", deal_id, epic, dealReference=f"p_{deal_id}")
             return httpx.Response(200, json={"dealReference": f"p_{deal_id}"})
+
+        if path == "/api/v1/workingorders" and method == "GET":
+            return httpx.Response(200, json={"workingOrders": [self._order_body(d, o) for d, o in self.orders.items()]})
+        if path == "/api/v1/workingorders" and method == "POST":
+            if body.get("goodTillDate") and datetime.strptime(body["goodTillDate"], "%Y-%m-%dT%H:%M:%S") <= self.now():
+                return self._error(400, "error.not-in-future.goodTillDate")
+            deal_id = f"WO{next(self._ids)}"
+            reference = self._new_reference("o")
+            self.orders[deal_id] = {"epic": body["epic"], "direction": body["direction"], "size": float(body["size"]), "level": float(body["level"]),
+                                    "type": body["type"], "goodTillDate": body.get("goodTillDate"), "created": self.now().strftime("%Y-%m-%dT%H:%M:%S")}
+            self.confirmations[reference] = {
+                "date": "2026-07-12T10:00:00.000", "status": "OPEN", "reason": "SUCCESS", "dealStatus": "ACCEPTED", "epic": body["epic"],
+                "dealReference": reference, "dealId": deal_id, "affectedDeals": [{"dealId": deal_id, "status": "OPENED"}],
+                "level": float(body["level"]), "size": float(body["size"]), "direction": body["direction"],
+                "guaranteedStop": False, "trailingStop": False}
+            self._log("WORKING_ORDER", "CREATED", deal_id, body["epic"], dealReference=reference)
+            return httpx.Response(200, json={"dealReference": reference})
+        if path.startswith("/api/v1/workingorders/") and method in ("PUT", "DELETE"):
+            deal_id = path.rsplit("/", 1)[1]
+            if deal_id not in self.orders:
+                return self._error(404, "error.not-found.dealId")
+            order = self.orders[deal_id]
+            if method == "PUT":
+                if body.get("goodTillDate") and datetime.strptime(body["goodTillDate"], "%Y-%m-%dT%H:%M:%S") <= self.now():
+                    return self._error(400, "error.not-in-future.goodTillDate")
+                if "level" in body:
+                    order["level"] = float(body["level"])
+                if "goodTillDate" in body:
+                    order["goodTillDate"] = body["goodTillDate"]
+                self._log("WORKING_ORDER", "MODIFIED", deal_id, order["epic"])
+            else:
+                del self.orders[deal_id]
+                self._log("WORKING_ORDER", "CANCELLED", deal_id, order["epic"])
+            return httpx.Response(200, json={"dealReference": self._new_reference("o")})
+        if path == "/api/v1/history/activity" and method == "GET":
+            params = dict(request.url.params)
+            records = [dict(a) for a in self.activity]
+            if "dealId" in params:
+                records = [a for a in records if a["dealId"] == params["dealId"]]
+            if "filter" in params:
+                records = [a for a in records if self._matches(a, params["filter"])]
+            for a in records:
+                details = a.pop("details")
+                if params.get("detailed") == "true":
+                    a["details"] = details
+            return httpx.Response(200, json={"activities": records})
 
         if path.startswith("/api/v1/confirms/") and method == "GET":
             if self.confirm_delay > 0:
