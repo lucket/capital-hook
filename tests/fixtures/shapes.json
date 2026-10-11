@@ -103,7 +103,7 @@
     "level": "float",
     "profit": "float",
     "profitCurrency": "str",
-    "size": "float",
+    "size": "float|int",
     "status": "str",
     "trailingStop": "bool"
   },
@@ -124,7 +124,9 @@
           "level": "float",
           "marketName": "str",
           "openPrice": "float",
+          "profitLevel": "float",
           "size": "float",
+          "stopLevel": "float",
           "workingOrderId": "str"
         },
         "epic": "str",
@@ -280,7 +282,7 @@
       },
       "minGuaranteedStopDistance": {
         "unit": "str",
-        "value": "float"
+        "value": "float|int"
       },
       "minSizeIncrement": {
         "unit": "str",
@@ -400,10 +402,11 @@
           "guaranteedStop": "bool",
           "level": "float",
           "leverage": "int",
-          "size": "float",
+          "profitLevel": "float",
+          "size": "float|int",
           "stopLevel": "float",
           "trailingStop": "bool",
-          "upl": "int",
+          "upl": "float|int",
           "workingOrderId": "str"
         }
       }
@@ -451,11 +454,14 @@
       "size": "float",
       "stopLevel": "float",
       "trailingStop": "bool",
-      "upl": "int",
+      "upl": "float|int",
       "workingOrderId": "str"
     }
   },
   "GET /positions/{id} 400": {
+    "errorCode": "str"
+  },
+  "GET /positions/{id} 404": {
     "errorCode": "str"
   },
   "GET /workingorders 200": {
