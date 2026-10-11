@@ -26,6 +26,7 @@ async def test_open_reserves_margin_but_leaves_the_balance(client, fake):
 
 
 async def test_buy_is_marked_to_the_bid_and_sell_to_the_ask(client, fake):
+    fake.preferences["hedgingMode"] = True                                       # otherwise the SELL would close the BUY
     buy = await open_ok(client, size=2, direction="BUY")
     sell = await open_ok(client, size=3, direction="SELL")
     fake.quote["GOLD"] = (2010.0, 2011.0)
@@ -348,3 +349,61 @@ async def test_check_invariants_names_every_problem_at_once(healthy):
     with pytest.raises(AssertionError) as err:
         fake.check_invariants()
     assert "balance" in str(err.value) and "non-positive size" in str(err.value)
+
+
+# ---------------------------------------------------------------- netting (hedging off) - calibrated on DEMO
+async def test_same_direction_deals_open_separate_positions_even_with_hedging_off(client, fake):
+    first, second = await open_ok(client, size=1), await open_ok(client, size=1)
+    assert first != second and set(fake.positions) == {first, second}
+
+
+async def test_an_opposite_deal_closes_the_position_instead_of_opening_one(client, fake):
+    buy = await open_ok(client, size=2)
+    fake.quote["GOLD"] = (2050.0, 2051.0)
+    reference = await client.open_position("GOLD", 2, "SELL")
+    confirmation = await client.confirm(reference, attempts=1, delay=0)
+    assert confirmation.accepted and confirmation.affected_deals == () and confirmation.position_deal_id is None   # observed on DEMO
+    assert buy not in fake.positions and fake.positions == {}
+    assert [(c["dealId"], c["source"], c["pnl"]) for c in fake.closed] == [(buy, "USER", pytest.approx((2050 - 2001) * 2))]
+
+
+async def test_an_opposite_deal_closes_the_oldest_position_first(client, fake):
+    oldest, newest = await open_ok(client, size=1), await open_ok(client, size=1)
+    await client.confirm(await client.open_position("GOLD", 1, "SELL"), attempts=1, delay=0)
+    assert set(fake.positions) == {newest} and oldest not in fake.positions
+
+
+async def test_an_opposite_deal_can_close_several_positions(client, fake):
+    await open_ok(client, size=1), await open_ok(client, size=2)
+    await client.confirm(await client.open_position("GOLD", 3, "SELL"), attempts=1, delay=0)
+    assert fake.positions == {}
+
+
+async def test_a_partial_offset_is_refused_instead_of_guessed(client, fake):
+    buy = await open_ok(client, size=2)
+    with pytest.raises(APIError) as exc:
+        await client.open_position("GOLD", 1, "SELL")
+    assert exc.value.error_code == "error.unsupported.in.fake" and set(fake.positions) == {buy}
+
+
+async def test_with_hedging_on_an_opposite_deal_opens_its_own_position(client, fake):
+    fake.preferences["hedgingMode"] = True
+    buy, sell = await open_ok(client, size=1), await open_ok(client, size=1, direction="SELL")
+    assert set(fake.positions) == {buy, sell}
+
+
+async def test_opposite_deals_on_another_epic_do_not_offset(client, fake):
+    fake.set_quote("US100", 15000.0, 15001.0)
+    buy = await open_ok(client, size=1)
+    sell = await open_ok(client, epic="US100", size=1, direction="SELL")
+    assert set(fake.positions) == {buy, sell}
+
+
+# ---------------------------------------------------------------- confirmation of a close - observed on DEMO
+async def test_a_close_can_be_confirmed_and_reports_the_realised_profit(client, fake):
+    deal_id = await open_ok(client, size=2)
+    fake.quote["GOLD"] = (2050.0, 2051.0)
+    reference = (await client.close_position(deal_id))["dealReference"]
+    confirmation = await client.confirm(reference, attempts=1, delay=0)
+    assert (confirmation.accepted, confirmation.status, confirmation.epic, confirmation.direction) == (True, "CLOSED", "GOLD", "SELL")
+    assert confirmation.deal_id == deal_id and confirmation.raw["profit"] == pytest.approx((2050 - 2001) * 2)

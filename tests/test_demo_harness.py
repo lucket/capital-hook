@@ -146,6 +146,7 @@ def journal(tmp_path):
 
 
 async def test_sweep_closes_and_cancels_what_a_crashed_run_left(client, fake, journal):
+    fake.preferences["hedgingMode"] = True                                       # keep the opposite deals as separate positions
     await client.open_position("GOLD", 1, "BUY")
     (position_id,) = fake.positions
     await client.create_working_order("GOLD", "BUY", 1, 1000)

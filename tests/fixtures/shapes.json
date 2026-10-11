@@ -1,0 +1,564 @@
+{
+  "DELETE /positions/{id} 200": {
+    "dealReference": "str"
+  },
+  "DELETE /positions/{id} 400": {
+    "errorCode": "str"
+  },
+  "DELETE /positions/{id} 404": {
+    "errorCode": "str"
+  },
+  "DELETE /session 200": {
+    "status": "str"
+  },
+  "DELETE /workingorders/{id} 200": {
+    "dealReference": "str"
+  },
+  "DELETE /workingorders/{id} 400": {
+    "errorCode": "str"
+  },
+  "DELETE /workingorders/{id} 404": {
+    "errorCode": "str"
+  },
+  "GET /accounts 200": {
+    "accounts": [
+      {
+        "accountId": "str",
+        "accountName": "str",
+        "accountType": "str",
+        "balance": {
+          "available": "float",
+          "balance": "float",
+          "deposit": "float",
+          "profitLoss": "float"
+        },
+        "currency": "str",
+        "preferred": "bool",
+        "status": "str",
+        "symbol": "str"
+      }
+    ]
+  },
+  "GET /accounts/preferences 200": {
+    "hedgingMode": "bool",
+    "leverages": {
+      "BONDS": {
+        "available": [
+          "int"
+        ],
+        "current": "int"
+      },
+      "COMMODITIES": {
+        "available": [
+          "int"
+        ],
+        "current": "int"
+      },
+      "CRYPTOCURRENCIES": {
+        "available": [
+          "int"
+        ],
+        "current": "int"
+      },
+      "CURRENCIES": {
+        "available": [
+          "int"
+        ],
+        "current": "int"
+      },
+      "INDICES": {
+        "available": [
+          "int"
+        ],
+        "current": "int"
+      },
+      "INTEREST_RATES": {
+        "available": [
+          "int"
+        ],
+        "current": "int"
+      },
+      "SHARES": {
+        "available": [
+          "int"
+        ],
+        "current": "int"
+      }
+    }
+  },
+  "GET /confirms/{id} 200": {
+    "affectedDeals": [
+      {
+        "dealId": "str",
+        "status": "str"
+      }
+    ],
+    "date": "str",
+    "dealId": "str",
+    "dealReference": "str",
+    "dealStatus": "str",
+    "direction": "str",
+    "epic": "str",
+    "guaranteedStop": "bool",
+    "level": "float",
+    "profit": "float",
+    "profitCurrency": "str",
+    "size": "float",
+    "status": "str",
+    "trailingStop": "bool"
+  },
+  "GET /confirms/{id} 400": {
+    "errorCode": "str"
+  },
+  "GET /history/activity 200": {
+    "activities": [
+      {
+        "date": "str",
+        "dateUTC": "str",
+        "dealId": "str",
+        "details": {
+          "currency": "str",
+          "dealReference": "str",
+          "direction": "str",
+          "guaranteedStop": "bool",
+          "level": "float",
+          "marketName": "str",
+          "openPrice": "float",
+          "size": "float",
+          "workingOrderId": "str"
+        },
+        "epic": "str",
+        "source": "str",
+        "status": "str",
+        "type": "str"
+      }
+    ]
+  },
+  "GET /markets 200": {
+    "marketDetails": [
+      {
+        "dealingRules": {
+          "marketOrderPreference": "str",
+          "maxDealSize": {
+            "unit": "str",
+            "value": "int"
+          },
+          "maxStopOrProfitDistance": {
+            "unit": "str",
+            "value": "int"
+          },
+          "minDealSize": {
+            "unit": "str",
+            "value": "float"
+          },
+          "minGuaranteedStopDistance": {
+            "unit": "str",
+            "value": "float"
+          },
+          "minSizeIncrement": {
+            "unit": "str",
+            "value": "float"
+          },
+          "minStepDistance": {
+            "unit": "str",
+            "value": "float"
+          },
+          "minStopOrProfitDistance": {
+            "unit": "str",
+            "value": "float"
+          },
+          "trailingStopsPreference": "str"
+        },
+        "instrument": {
+          "country": "str",
+          "currency": "str",
+          "epic": "str",
+          "expiry": "str",
+          "guaranteedStopAllowed": "bool",
+          "lotSize": "int",
+          "marginFactor": "int",
+          "marginFactorUnit": "str",
+          "name": "str",
+          "openingHours": {
+            "fri": [
+              "str"
+            ],
+            "mon": [
+              "str"
+            ],
+            "sat": [
+              "str"
+            ],
+            "sun": [
+              "str"
+            ],
+            "thu": [
+              "str"
+            ],
+            "tue": [
+              "str"
+            ],
+            "wed": [
+              "str"
+            ],
+            "zone": "str"
+          },
+          "overnightFee": {
+            "longRate": "float",
+            "shortRate": "float",
+            "swapChargeInterval": "int",
+            "swapChargeTimestamp": "int"
+          },
+          "streamingPricesAvailable": "bool",
+          "symbol": "str",
+          "type": "str"
+        },
+        "snapshot": {
+          "bid": "float",
+          "decimalPlacesFactor": "int",
+          "delayTime": "int",
+          "high": "float",
+          "low": "float",
+          "marketModes": [
+            "str"
+          ],
+          "marketStatus": "str",
+          "netChange": "float",
+          "offer": "float",
+          "percentageChange": "float",
+          "scalingFactor": "int",
+          "updateTime": "str"
+        }
+      }
+    ],
+    "markets": [
+      {
+        "bid": "float",
+        "delayTime": "int",
+        "epic": "str",
+        "expiry": "str",
+        "high": "float",
+        "instrumentId": "int",
+        "instrumentName": "str",
+        "instrumentType": "str",
+        "lotSize": "int",
+        "low": "float",
+        "marketModes": [
+          "str"
+        ],
+        "marketStatus": "str",
+        "netChange": "float",
+        "offer": "float",
+        "percentageChange": "float",
+        "pipPosition": "int",
+        "scalingFactor": "int",
+        "streamingPricesAvailable": "bool",
+        "symbol": "str",
+        "tickSize": "float",
+        "updateTime": "str",
+        "updateTimeUTC": "str"
+      }
+    ]
+  },
+  "GET /markets 500": {
+    "errorCode": "str"
+  },
+  "GET /markets/{id} 200": {
+    "dealingRules": {
+      "marketOrderPreference": "str",
+      "maxDealSize": {
+        "unit": "str",
+        "value": "int"
+      },
+      "maxStopOrProfitDistance": {
+        "unit": "str",
+        "value": "int"
+      },
+      "minDealSize": {
+        "unit": "str",
+        "value": "float|int"
+      },
+      "minGuaranteedStopDistance": {
+        "unit": "str",
+        "value": "float"
+      },
+      "minSizeIncrement": {
+        "unit": "str",
+        "value": "float|int"
+      },
+      "minStepDistance": {
+        "unit": "str",
+        "value": "float"
+      },
+      "minStopOrProfitDistance": {
+        "unit": "str",
+        "value": "float"
+      },
+      "trailingStopsPreference": "str"
+    },
+    "instrument": {
+      "country": "str",
+      "currency": "str",
+      "epic": "str",
+      "expiry": "str",
+      "guaranteedStopAllowed": "bool",
+      "lotSize": "int",
+      "marginFactor": "int",
+      "marginFactorUnit": "str",
+      "name": "str",
+      "openingHours": {
+        "fri": [
+          "str"
+        ],
+        "mon": [
+          "str"
+        ],
+        "sat": [
+          "str"
+        ],
+        "sun": [
+          "str"
+        ],
+        "thu": [
+          "str"
+        ],
+        "tue": [
+          "str"
+        ],
+        "wed": [
+          "str"
+        ],
+        "zone": "str"
+      },
+      "overnightFee": {
+        "longRate": "float",
+        "shortRate": "float",
+        "swapChargeInterval": "int",
+        "swapChargeTimestamp": "int"
+      },
+      "streamingPricesAvailable": "bool",
+      "symbol": "str",
+      "type": "str"
+    },
+    "snapshot": {
+      "bid": "float",
+      "decimalPlacesFactor": "int",
+      "delayTime": "int",
+      "high": "float",
+      "low": "float",
+      "marketModes": [
+        "str"
+      ],
+      "marketStatus": "str",
+      "netChange": "float",
+      "offer": "float",
+      "percentageChange": "float",
+      "scalingFactor": "int",
+      "updateTime": "str"
+    }
+  },
+  "GET /ping 200": {
+    "status": "str"
+  },
+  "GET /positions 200": {
+    "positions": [
+      {
+        "market": {
+          "bid": "float",
+          "delayTime": "int",
+          "epic": "str",
+          "expiry": "str",
+          "high": "float",
+          "instrumentId": "int",
+          "instrumentName": "str",
+          "instrumentType": "str",
+          "lotSize": "int",
+          "low": "float",
+          "marketModes": [
+            "str"
+          ],
+          "marketStatus": "str",
+          "netChange": "float",
+          "offer": "float",
+          "percentageChange": "float",
+          "pipPosition": "int",
+          "scalingFactor": "int",
+          "streamingPricesAvailable": "bool",
+          "symbol": "str",
+          "tickSize": "float",
+          "updateTime": "str",
+          "updateTimeUTC": "str"
+        },
+        "position": {
+          "contractSize": "int",
+          "createdDate": "str",
+          "createdDateUTC": "str",
+          "currency": "str",
+          "dealId": "str",
+          "dealReference": "str",
+          "direction": "str",
+          "guaranteedStop": "bool",
+          "level": "float",
+          "leverage": "int",
+          "size": "float",
+          "stopLevel": "float",
+          "trailingStop": "bool",
+          "upl": "int",
+          "workingOrderId": "str"
+        }
+      }
+    ]
+  },
+  "GET /positions/{id} 200": {
+    "market": {
+      "bid": "float",
+      "delayTime": "int",
+      "epic": "str",
+      "expiry": "str",
+      "high": "float",
+      "instrumentId": "int",
+      "instrumentName": "str",
+      "instrumentType": "str",
+      "lotSize": "int",
+      "low": "float",
+      "marketModes": [
+        "str"
+      ],
+      "marketStatus": "str",
+      "netChange": "float",
+      "offer": "float",
+      "percentageChange": "float",
+      "pipPosition": "int",
+      "scalingFactor": "int",
+      "streamingPricesAvailable": "bool",
+      "symbol": "str",
+      "tickSize": "float",
+      "updateTime": "str",
+      "updateTimeUTC": "str"
+    },
+    "position": {
+      "contractSize": "int",
+      "createdDate": "str",
+      "createdDateUTC": "str",
+      "currency": "str",
+      "dealId": "str",
+      "dealReference": "str",
+      "direction": "str",
+      "guaranteedStop": "bool",
+      "level": "float",
+      "leverage": "int",
+      "profitLevel": "float",
+      "size": "float",
+      "stopLevel": "float",
+      "trailingStop": "bool",
+      "upl": "int",
+      "workingOrderId": "str"
+    }
+  },
+  "GET /positions/{id} 400": {
+    "errorCode": "str"
+  },
+  "GET /workingorders 200": {
+    "workingOrders": [
+      {
+        "marketData": {
+          "bid": "float",
+          "delayTime": "int",
+          "epic": "str",
+          "expiry": "str",
+          "high": "float",
+          "instrumentId": "int",
+          "instrumentName": "str",
+          "instrumentType": "str",
+          "lotSize": "int",
+          "low": "float",
+          "marketModes": [
+            "str"
+          ],
+          "marketStatus": "str",
+          "netChange": "float",
+          "offer": "float",
+          "percentageChange": "float",
+          "scalingFactor": "int",
+          "streamingPricesAvailable": "bool",
+          "symbol": "str",
+          "updateTime": "str",
+          "updateTimeUTC": "str"
+        },
+        "workingOrderData": {
+          "createdDate": "str",
+          "createdDateUTC": "str",
+          "currencyCode": "str",
+          "dealId": "str",
+          "direction": "str",
+          "epic": "str",
+          "guaranteedStop": "bool",
+          "leverage": "int",
+          "orderLevel": "float",
+          "orderSize": "float",
+          "orderType": "str",
+          "timeInForce": "str",
+          "trailingStop": "bool"
+        }
+      }
+    ]
+  },
+  "POST /positions 200": {
+    "dealReference": "str"
+  },
+  "POST /positions 400": {
+    "errorCode": "str"
+  },
+  "POST /session 200": {
+    "accountInfo": {
+      "available": "float",
+      "balance": "float",
+      "deposit": "float",
+      "profitLoss": "float"
+    },
+    "accountType": "str",
+    "accounts": [
+      {
+        "accountId": "str",
+        "accountName": "str",
+        "accountType": "str",
+        "balance": {
+          "available": "float",
+          "balance": "float",
+          "deposit": "float",
+          "profitLoss": "float"
+        },
+        "currency": "str",
+        "preferred": "bool",
+        "symbol": "str"
+      }
+    ],
+    "clientId": "str",
+    "currencyIsoCode": "str",
+    "currencySymbol": "str",
+    "currentAccountId": "str",
+    "hasActiveDemoAccounts": "bool",
+    "hasActiveLiveAccounts": "bool",
+    "streamingHost": "str",
+    "timezoneOffset": "int",
+    "trailingStopsEnabled": "bool"
+  },
+  "POST /workingorders 200": {
+    "dealReference": "str"
+  },
+  "POST /workingorders 400": {
+    "errorCode": "str"
+  },
+  "PUT /positions/{id} 200": {
+    "dealReference": "str"
+  },
+  "PUT /positions/{id} 400": {
+    "errorCode": "str"
+  },
+  "PUT /workingorders/{id} 200": {
+    "dealReference": "str"
+  },
+  "PUT /workingorders/{id} 400": {
+    "errorCode": "str"
+  }
+}

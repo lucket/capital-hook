@@ -12,7 +12,7 @@ async def test_confirm_returns_the_accepted_confirmation_with_the_deal_id(client
     assert confirmation.accepted and not confirmation.rejected
     assert (confirmation.deal_reference, confirmation.epic, confirmation.direction) == (reference, "GOLD", "BUY")
     assert confirmation.position_deal_id == deal_id and confirmation.deal_id and confirmation.deal_id != deal_id     # the order is not the position
-    assert (confirmation.size, confirmation.level, confirmation.status, confirmation.reason) == (1.5, 2001.0, "OPEN", "SUCCESS")
+    assert (confirmation.size, confirmation.level, confirmation.status, confirmation.reason) == (1.5, 2001.0, "OPEN", None)
     assert confirmation.affected_deals == ({"dealId": deal_id, "status": "OPENED"},)
     assert confirmation.raw["dealStatus"] == "ACCEPTED"
 

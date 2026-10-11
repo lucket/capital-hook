@@ -39,9 +39,14 @@ ASSUMPTIONS = {
     "fill price": "A triggered working order fills at the current ask (BUY) / bid (SELL).",
     "profit and loss": "A position's upl is marked to the closing side (bid for BUY, ask for SELL), so a fresh deal shows the spread.",
     "margin": "Margin = size x level / leverage of the instrument type (leverage 1 when unknown); used only for self-consistency.",
-    "netting": "Hedging mode is stored but NOT modelled: every open creates its own position, even in the opposite direction.",
+    "netting": "Observed on DEMO (hedging off): a second same-direction deal opens its own position; an opposite deal closes a position and "
+               "returns no affectedDeals. Assumed: oldest positions first, source USER; only exact-size offsets are modelled (others: 400 "
+               "error.unsupported.in.fake). With hedging on, every open creates its own position.",
     "session tokens": "A new login invalidates the tokens of the previous session.",
-    "close/update confirmations": "GET /confirms is only available for opens and working orders.",
+    "close/update confirmations": "Observed: GET /confirms/p_<id> after a close is ACCEPTED with status CLOSED. The fake adds profit and an "
+                                  "affectedDeals CLOSED entry (assumed); a confirmation for an update is NOT modelled (404).",
+    "id format": "The real API answers 400 error.invalid.dealId for a malformed id and 404 error.not-found.dealId for a well-formed unknown one; "
+                 "the fake answers 404 for every unknown id.",
     "unfiltered markets": "GET /markets with no searchTerm / epics returns every market here; the real DEMO server answered 500 (kept for the "
                           "downstream tests that rely on it). Use the filters.",
     "unsupported order options": "guaranteed / trailing stops and distance / amount variants are refused with 400 error.unsupported.in.fake.",
@@ -85,6 +90,7 @@ class FakeCapital:
         self.confirmations = {}   # dealReference -> confirmation body
         self.meta = {}            # dealId -> {"dealReference", "stopLevel", "profitLevel", "created", "order"}
         self._issued = set()      # deal ids this fake handed out (as opposed to ones a test wrote into `positions`)
+        self._offset_orders = set()   # ids of orders that closed positions instead of opening one
         self._fills = []          # (orderId, dealId): working orders that became positions
         self._faults = []         # pending injected faults
         self._balance = 10000.0
@@ -212,7 +218,13 @@ class FakeCapital:
         record = {"dealId": deal_id, "epic": p["epic"], "direction": p["direction"], "size": p["size"], "open_level": p["level"],
                   "close_level": close_level, "pnl": pnl, "source": source, "time": self._stamp()}
         self.closed.append(record)
-        self._log("POSITION", "ACCEPTED", deal_id, p["epic"], source=source, dealReference=ref or f"p_{deal_id}")
+        reference = ref or f"p_{deal_id}"
+        self._log("POSITION", "ACCEPTED", deal_id, p["epic"], source=source, dealReference=reference)
+        self.confirmations[reference] = {
+            "date": self._stamp() + ".000", "status": "CLOSED", "dealStatus": "ACCEPTED", "epic": p["epic"],
+            "dealReference": reference, "dealId": deal_id, "affectedDeals": [{"dealId": deal_id, "status": "CLOSED"}], "level": close_level,
+            "size": p["size"], "direction": "SELL" if p["direction"] == "BUY" else "BUY", "profit": round(pnl, 6), "profitCurrency": "USD",
+            "guaranteedStop": False, "trailingStop": False}
         return record
 
     def settle(self) -> None:
@@ -273,12 +285,34 @@ class FakeCapital:
             return "INSUFFICIENT_FUNDS"
         return None
 
-    def _confirmation(self, reference: str, body: dict, level: float, deal_id: str | None, reason: str | None, *, order_id: str | None = None) -> dict:
-        data = {"date": self._stamp() + ".000", "status": "OPEN" if not reason else "DELETED", "reason": reason or "SUCCESS",
+    def _offset(self, epic: str, direction: str, size: float):
+        """Hedging off: a deal against existing positions closes them. Oldest first (assumed); only exact fits are modelled.
+
+        Returns True when positions were closed, False when there is nothing to offset, "refused" for a partial offset."""
+        opposite = [(d, p) for d, p in self.positions.items() if p["epic"] == epic and p["direction"] != direction]
+        if not opposite:
+            return False
+        chosen, total = [], 0.0
+        for deal_id, p in opposite:
+            if total + 1e-12 >= size:
+                break
+            chosen.append(deal_id)
+            total += p["size"]
+        if abs(total - size) > 1e-9:
+            return "refused"
+        for deal_id in chosen:
+            self._close(deal_id, "USER")
+        return True
+
+    def _confirmation(self, reference: str, body: dict, level: float, deal_id: str | None, reason: str | None, *, order_id: str | None = None,
+                      affected: list | None = None) -> dict:
+        data = {"date": self._stamp() + ".000", "status": "OPEN" if not reason else "DELETED",
                 "dealStatus": "REJECTED" if reason else "ACCEPTED", "epic": body["epic"], "dealReference": reference,
-                "affectedDeals": [] if reason else [{"dealId": deal_id, "status": "OPENED"}], "level": level, "size": float(body["size"]),
+                "affectedDeals": [] if reason or affected == [] else [{"dealId": deal_id, "status": "OPENED"}], "level": level, "size": float(body["size"]),
                 "direction": body["direction"], "guaranteedStop": False, "trailingStop": False}
-        if not reason:
+        if reason:
+            data["reason"] = reason                         # DEMO's accepted confirmations carry no "reason" key (the Postman example does)
+        else:
             data["dealId"] = order_id or deal_id            # an order's id; for an opened position it differs from the position's id
         self.confirmations[reference] = data
         return data
@@ -290,8 +324,10 @@ class FakeCapital:
             "instrument": {"epic": epic, "name": epic, "type": self.markets.get(epic, ""), "lotSize": 1, "currency": "USD", "openingHours": self.hours},
             "dealingRules": {"minDealSize": {"unit": "POINTS", "value": self.min_deal_size.get(epic, 0.01)},
                              "minStepDistance": {"unit": "POINTS", "value": 0.01},
-                             "minNormalStopOrLimitDistance": {"unit": "PERCENTAGE", "value": 1.0},
-                             "maxStopOrLimitDistance": {"unit": "PERCENTAGE", "value": 90.0}},
+                             "minStopOrProfitDistance": {"unit": "PERCENTAGE", "value": 0.01},
+                             "maxStopOrProfitDistance": {"unit": "PERCENTAGE", "value": 100},
+                             "minSizeIncrement": {"unit": "POINTS", "value": 0.01},
+                             "maxDealSize": {"unit": "POINTS", "value": 1000}},
             "snapshot": {"marketStatus": self.market_status.get(epic, "TRADEABLE"), "bid": bid, "offer": ask},
         }
 
@@ -411,6 +447,16 @@ class FakeCapital:
             self._confirmation(reference, body, level, None, reason)
             self._log("POSITION", "REJECTED", "", epic, dealReference=reference, reason=reason)
             return httpx.Response(200, json={"dealReference": reference})
+        if not self.preferences.get("hedgingMode"):
+            offset = self._offset(epic, body["direction"], float(body["size"]))
+            if offset == "refused":
+                return self._error(400, "error.unsupported.in.fake")
+            if offset:                                              # an opposite deal closed existing position(s) instead of opening one
+                order_id = self._new_id("OD")
+                self._offset_orders.add(order_id)
+                self._confirmation(reference, body, level, None, None, order_id=order_id, affected=[])
+                self._log("POSITION", "ACCEPTED", "", epic, dealReference=reference, size=float(body["size"]), direction=body["direction"], level=level)
+                return httpx.Response(200, json={"dealReference": reference})
         deal_id = self._new_id()
         self.positions[deal_id] = {"epic": epic, "size": float(body["size"]), "direction": body["direction"], "level": level}
         self.meta[deal_id] = {"dealReference": f"p_{deal_id}", "stopLevel": body.get("stopLevel"), "profitLevel": body.get("profitLevel"),
@@ -518,7 +564,7 @@ class FakeCapital:
             opened = next((a["dealId"] for a in c.get("affectedDeals", []) if a.get("status") == "OPENED"), None)
             deal_id = opened if opened and opened != c.get("dealId") else c.get("dealId")      # an opened position, else the working order
             if c["dealStatus"] == "ACCEPTED":
-                known = (deal_id in self.positions or deal_id in self.orders or deal_id in closed_ids
+                known = (deal_id in self.positions or deal_id in self.orders or deal_id in closed_ids or deal_id in self._offset_orders
                          or any(o == deal_id for o, _ in self._fills)
                          or any(a["dealId"] == deal_id and a["status"] in ("CANCELLED", "EXPIRED") for a in self.activity))
                 if not known:
