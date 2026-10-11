@@ -282,6 +282,17 @@ class FakeCapital:
         return data
 
     # ------------------------------------------------------------------ routing
+    def _market_detail(self, epic: str) -> dict:
+        bid, ask = self.quote.get(epic, (0, 0))
+        return {
+            "instrument": {"epic": epic, "name": epic, "type": self.markets.get(epic, ""), "lotSize": 1, "currency": "USD", "openingHours": self.hours},
+            "dealingRules": {"minDealSize": {"unit": "POINTS", "value": self.min_deal_size.get(epic, 0.01)},
+                             "minStepDistance": {"unit": "POINTS", "value": 0.01},
+                             "minNormalStopOrLimitDistance": {"unit": "PERCENTAGE", "value": 1.0},
+                             "maxStopOrLimitDistance": {"unit": "PERCENTAGE", "value": 90.0}},
+            "snapshot": {"marketStatus": self.market_status.get(epic, "TRADEABLE"), "bid": bid, "offer": ask},
+        }
+
     def handler(self, request: httpx.Request) -> httpx.Response:
         path, method = request.url.path, request.method
         self.requests.append((method, path, request.url.host))
@@ -317,27 +328,19 @@ class FakeCapital:
             return httpx.Response(200, json={"status": "OK"})
 
         if path == "/api/v1/markets" and method == "GET":
-            found = self.markets.items()
             term, wanted = request.url.params.get("searchTerm"), request.url.params.get("epics")
-            if term:
-                found = [(e, t) for e, t in found if term.lower() in e.lower()]
-            elif wanted:
-                found = [(e, t) for e, t in found if e in wanted.split(",")]
-            return httpx.Response(200, json={"markets": [{"epic": e, "instrumentType": t} for e, t in found]})
+            if term:                                           # summaries under "markets"
+                return httpx.Response(200, json={"markets": [{"epic": e, "instrumentType": t, "instrumentName": e}
+                                                             for e, t in self.markets.items() if term.lower() in e.lower()]})
+            if wanted:                                         # full details under "marketDetails"
+                known = [e for e in wanted.split(",") if e in self.markets or e in self.quote]
+                return httpx.Response(200, json={"marketDetails": [self._market_detail(e) for e in known]})
+            return httpx.Response(200, json={"markets": [{"epic": e, "instrumentType": t} for e, t in self.markets.items()]})
         if path.startswith("/api/v1/markets/") and method == "GET":
             epic = path.rsplit("/", 1)[1]
             if epic not in self.quote and epic not in self.markets:
                 return self._error(404, "error.not-found.epic")
-            bid, ask = self.quote.get(epic, (0, 0))
-            min_size = self.min_deal_size.get(epic, 0.01)
-            return httpx.Response(200, json={
-                "instrument": {"epic": epic, "name": epic, "type": self.markets.get(epic, ""), "lotSize": 1, "currency": "USD", "openingHours": self.hours},
-                "dealingRules": {"minDealSize": {"unit": "POINTS", "value": min_size},
-                                 "minStepDistance": {"unit": "POINTS", "value": 0.01},
-                                 "minNormalStopOrLimitDistance": {"unit": "PERCENTAGE", "value": 1.0},
-                                 "maxStopOrLimitDistance": {"unit": "PERCENTAGE", "value": 90.0}},
-                "snapshot": {"marketStatus": self.market_status.get(epic, "TRADEABLE"), "bid": bid, "offer": ask},
-            })
+            return httpx.Response(200, json=self._market_detail(epic))
         if path == "/api/v1/accounts" and method == "GET":
             return httpx.Response(200, json={"accounts": [self._account_body()]})
         if path == "/api/v1/accounts/preferences" and method == "GET":

@@ -219,8 +219,11 @@ class CapitalClient:
 
     # ---- markets ----
     async def get_markets(self, search_term: str | None = None, epics: list[str] | tuple[str, ...] | None = None) -> list[dict]:
-        """Market summaries. ``search_term`` / ``epics`` (max 50) narrow the answer; ``search_term`` wins when both are given.
+        """Market summaries, each with at least ``epic`` and ``instrumentType``.
 
+        ``search_term`` / ``epics`` (max 50) narrow the answer; ``search_term`` wins when both are given. The two filters come back in
+        different shapes from Capital.com (``markets`` summaries vs ``marketDetails`` with instrument / dealingRules / snapshot);
+        details are flattened here and keep their ``instrument``, ``dealingRules`` and ``snapshot`` entries.
         Called with no argument the request has no filter, which the DEMO server answered with a 500 in testing.
         """
         params = {}
@@ -228,7 +231,14 @@ class CapitalClient:
             params["searchTerm"] = search_term
         if epics:
             params["epics"] = ",".join(epics)
-        return (await self._request("GET", "/api/v1/markets", params=params or None)).json().get("markets", [])
+        body = (await self._request("GET", "/api/v1/markets", params=params or None)).json()
+        markets = list(body.get("markets", []))
+        for detail in body.get("marketDetails", []):
+            instrument, snapshot = detail.get("instrument", {}), detail.get("snapshot", {})
+            markets.append({**detail, "epic": instrument.get("epic"), "instrumentType": instrument.get("type"),
+                            "instrumentName": instrument.get("name"), "marketStatus": snapshot.get("marketStatus"),
+                            "bid": snapshot.get("bid"), "offer": snapshot.get("offer")})
+        return markets
 
     async def get_instrument_types(self, epics: list[str] | tuple[str, ...] | None = None) -> dict[str, str]:
         """Map of epic -> instrumentType, for ``epics`` when given, otherwise for whatever an unfiltered ``get_markets`` returns."""

@@ -38,3 +38,25 @@ async def test_get_market_returns_instrument_rules_and_snapshot(fake, client):
     market = await client.get_market("GOLD")
     assert market["instrument"]["epic"] == "GOLD" and market["snapshot"]["bid"] == 1999.0
     assert "minDealSize" in market["dealingRules"]
+
+
+async def test_get_markets_by_epics_flattens_market_details(fake, client):
+    """Capital.com answers ``epics`` with ``marketDetails`` (not ``markets``): the client hides the difference."""
+    fake.set_quote("GOLD", 1999.0, 2001.0)
+    [gold] = await client.get_markets(epics=["GOLD"])
+    assert (gold["epic"], gold["instrumentType"], gold["bid"], gold["offer"], gold["marketStatus"]) == ("GOLD", "COMMODITIES", 1999.0, 2001.0, "TRADEABLE")
+    assert "minDealSize" in gold["dealingRules"] and gold["instrument"]["epic"] == "GOLD"
+
+
+async def test_get_markets_search_returns_summaries(fake, client):
+    [gold] = await client.get_markets(search_term="GOL")
+    assert gold["epic"] == "GOLD" and gold["instrumentType"] == "COMMODITIES"
+
+
+async def test_get_markets_by_epics_both_response_keys_are_merged(client, monkeypatch):
+    async def fake_request(method, path, **kw):
+        import httpx
+        return httpx.Response(200, json={"markets": [{"epic": "A", "instrumentType": "X"}],
+                                         "marketDetails": [{"instrument": {"epic": "B", "type": "Y"}, "snapshot": {}}]})
+    monkeypatch.setattr(client, "_request", fake_request)
+    assert [(m["epic"], m["instrumentType"]) for m in await client.get_markets()] == [("A", "X"), ("B", "Y")]
