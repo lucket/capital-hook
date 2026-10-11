@@ -86,6 +86,7 @@ class FakeCapital:
         self.quote = {"GOLD": (2000.0, 2001.0)}   # epic -> (bid, ask)
         self.markets = {"GOLD": "COMMODITIES", "US100": "INDICES"}
         self.min_deal_size = {}        # epic -> minimum deal size (default 0.01); a smaller order is answered 400 error.invalid.size.minvalue
+        self.decimals = {}             # epic -> decimalPlacesFactor reported in the snapshot (default 2)
         self.size_increment = {}       # epic -> minSizeIncrement reported in the dealing rules (default: the minimum size); NOT enforced (its error code is unobserved)
         self.max_deal_size = {}        # epic -> maximum deal size (default 1,000,000); a larger one is answered 400 error.invalid.size.maxvalue
         self.market_status = {}        # epic -> "TRADEABLE" (default) | "CLOSED" ...; an explicit entry always wins
@@ -368,7 +369,7 @@ class FakeCapital:
                              "minStopOrProfitDistance": {"unit": "PERCENTAGE", "value": 0.01},
                              "maxStopOrProfitDistance": {"unit": "PERCENTAGE", "value": 100},
                              "minSizeIncrement": {"unit": "POINTS", "value": self.size_increment.get(epic, self.min_deal_size.get(epic, 0.01))}},
-            "snapshot": {"marketStatus": self.status_of(epic), "bid": bid, "offer": ask},
+            "snapshot": {"marketStatus": self.status_of(epic), "bid": bid, "offer": ask, "decimalPlacesFactor": self.decimals.get(epic, 2)},
         }
 
     def handler(self, request: httpx.Request) -> httpx.Response:
