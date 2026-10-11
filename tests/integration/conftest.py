@@ -4,6 +4,7 @@ Run:  CAPITAL_DEMO_IDENTITY=... CAPITAL_DEMO_PASSWORD=... CAPITAL_DEMO_API_KEY=.
 """
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -92,7 +93,11 @@ async def demo_market(demo_client, recorder):
     market = await demo_client.get_market(epic)
     snapshot, rules = market["snapshot"], market["dealingRules"]
     if snapshot.get("marketStatus") != "TRADEABLE":
-        pytest.skip(f"{epic} is not tradeable right now (marketStatus={snapshot.get('marketStatus')})")
+        hours = market["instrument"].get("openingHours") or {}
+        now = datetime.now(timezone.utc)
+        pytest.skip(f"{epic} is not tradeable right now: marketStatus={snapshot.get('marketStatus')!r}, marketModes={snapshot.get('marketModes')}, "
+                    f"{now:%a %H:%M} UTC, published hours today {hours.get(now.strftime('%a').lower())}. "
+                    f"Try another market with CAPITAL_DEMO_EPIC, or see: python tests/integration/demo_market_status.py")
     busy = [p for p in await demo_client.get_positions() if p["epic"] == epic] + [o for o in await demo_client.get_working_orders() if o["epic"] == epic]
     if busy:
         pytest.skip(f"{epic} already has {len(busy)} position(s)/working order(s) on the demo account: refusing to trade it "
