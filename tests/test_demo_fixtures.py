@@ -124,3 +124,77 @@ def test_a_dry_run_leaves_a_real_hold_record_alone(tmp_path):
     run = subprocess.run([sys.executable, "-m", "pytest", "-m", "demo", "tests/integration", "-q", "-p", "no:cacheprovider"], cwd=copy, env=env, capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
     assert record.read_text() == '{"deal_id": "THE-REAL-ONE", "opened_at_utc": "Sun 22:00:00"}'
+
+
+# ---------------------------------------------------------------- the exits test's helpers (they failed against the real API once: a stale price made the level invalid)
+def _load_exits_module():
+    import importlib.util
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    spec = importlib.util.spec_from_file_location("demo_exits_under_test", INTEGRATION / "test_demo_exits.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_bracket_puts_the_stop_and_the_target_on_the_sides_each_direction_needs():
+    exits = _load_exits_module()
+    buy = exits.bracket("BUY", 100.00, 100.10, 0.001, 2)
+    sell = exits.bracket("SELL", 100.00, 100.10, 0.001, 2)
+    assert buy == {"stop_level": 99.9, "profit_level": 100.2} and sell == {"stop_level": 100.2, "profit_level": 99.9}
+    assert buy["stop_level"] < 100.00 < 100.10 < buy["profit_level"] and sell["profit_level"] < 100.00 < 100.10 < sell["stop_level"]
+
+
+async def test_the_exits_test_reads_the_price_when_it_orders_not_when_the_session_started():
+    from capital_hook import CapitalClient
+    from capital_hook.testing import FakeCapital
+    exits = _load_exits_module()
+    fake = FakeCapital()
+    client = CapitalClient("me", "pw", "key", http=fake.client())
+    assert await exits.fresh_quote(client, "GOLD") == (2000.0, 2001.0)
+    fake.set_quote("GOLD", 2010.0, 2011.0)
+    assert await exits.fresh_quote(client, "GOLD") == (2010.0, 2011.0)
+
+
+async def _bracket_world():
+    from capital_hook import CapitalClient
+    from capital_hook.testing import FakeCapital
+    exits = _load_exits_module()
+    fake = FakeCapital()
+    client = CapitalClient("me", "pw", "key", http=fake.client())
+
+    class Tracker:
+        positions = set()
+
+        async def open(self, epic, size, direction, **options):
+            reference = await client.open_position(epic, size, direction, **options)
+            return reference, await client.confirm(reference, attempts=1, delay=0)
+    return exits, fake, client, Tracker()
+
+
+async def test_a_level_refused_as_too_close_is_retried_wider_at_the_price_of_that_moment():
+    exits, fake, client, tracker = await _bracket_world()
+    fake.fail_next("POST", "/api/v1/positions", status=400, error_code="error.invalid.takeprofit.minvalue: 2003.5")
+    fake.fail_next("POST", "/api/v1/positions", status=400, error_code="error.invalid.stoploss.maxvalue: 1996.1")
+    confirmation, levels, attempts, price, gap = await exits.open_with_bracket(client, tracker, "GOLD", 0.1, "BUY", 2, 0.0002)
+    assert confirmation.accepted and len(attempts) == 2 and gap == 0.0002 * 1.5 ** 2
+    assert [a["gap_pct"] for a in attempts] == [0.02, 0.03] and attempts[0]["refused"].startswith("error.invalid.takeprofit")
+    assert levels["stop_level"] < 2000.0 < 2001.0 < levels["profit_level"] and (fake.meta[confirmation.position_deal_id]["stopLevel"], fake.meta[confirmation.position_deal_id]["profitLevel"]) == (levels["stop_level"], levels["profit_level"])
+
+
+async def test_three_refusals_give_up_and_report_every_attempt():
+    exits, fake, client, tracker = await _bracket_world()
+    fake.fail_next("POST", "/api/v1/positions", status=400, error_code="error.invalid.takeprofit.minvalue: 2003.5", times=5)
+    confirmation, levels, attempts, price, gap = await exits.open_with_bracket(client, tracker, "GOLD", 0.1, "SELL", 2, 0.0002)
+    assert confirmation is None and len(attempts) == 3 and fake.positions == {}
+
+
+async def test_an_error_that_is_not_about_the_levels_is_raised_not_retried():
+    import pytest as _pytest
+
+    from capital_hook import APIError
+    exits, fake, client, tracker = await _bracket_world()
+    fake.fail_next("POST", "/api/v1/positions", status=503, error_code="error.unavailable")
+    with _pytest.raises(APIError) as exc:
+        await exits.open_with_bracket(client, tracker, "GOLD", 0.1, "BUY", 2, 0.0002)
+    assert exc.value.status_code == 503
