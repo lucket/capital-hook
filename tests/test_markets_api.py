@@ -76,3 +76,11 @@ async def test_the_fake_logs_the_query_parameters_it_receives(fake, client):
     await client.get_markets(epics=["GOLD", "US100"])
     await client.get_markets(search_term="GOL")
     assert [q for m, path, q in fake.queries if path == "/api/v1/markets"] == [{"epics": "GOLD,US100"}, {"searchTerm": "GOL"}]
+
+
+async def test_the_market_snapshot_reports_the_price_precision(fake, client):
+    assert (await client.get_market("GOLD"))["snapshot"]["decimalPlacesFactor"] == 2
+    fake.decimals["GOLD"] = 4
+    assert (await client.get_market("GOLD"))["snapshot"]["decimalPlacesFactor"] == 4
+    [gold] = await client.get_markets(epics=["GOLD"])
+    assert gold["snapshot"]["decimalPlacesFactor"] == 4

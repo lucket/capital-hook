@@ -11,7 +11,7 @@ import httpx
 
 from .enums import TradeDirection, TradeMode, WorkingOrderType
 from .errors import APIError, AuthError, CapitalError
-from .models import Confirmation
+from .models import CloseEvent, Confirmation
 
 log = logging.getLogger("capital_hook.client")
 
@@ -434,6 +434,22 @@ class CapitalClient:
         return (await self._request("DELETE", f"/api/v1/workingorders/{deal_id}")).json()["dealReference"]
 
     # ---- history ----
+    async def get_close_event(self, deal_id: str, *, last_period: int = 86400) -> "CloseEvent | None":
+        """How a position ended: stop loss, take profit, a close request, or the broker. ``None`` when there is no sign it closed
+        (still open, unknown, or older than ``last_period`` seconds).
+
+        The activity of a deal starts with the entry that opened it; a later accepted position entry is its close, and an entry
+        whose source is ``SL`` / ``TP`` / ``CLOSE_OUT`` is a close by itself."""
+        entries = [a for a in await self.get_activity(deal_id=deal_id, detailed=True, last_period=last_period)
+                   if a.get("type") == "POSITION" and a.get("status") == "ACCEPTED"]
+        entries.sort(key=lambda a: a.get("dateUTC") or "")
+        closers = [a for a in entries if a.get("source") in ("SL", "TP", "CLOSE_OUT")]
+        if closers:
+            return CloseEvent.from_activity(closers[-1])
+        if len(entries) >= 2:
+            return CloseEvent.from_activity(entries[-1])
+        return None
+
     async def get_activity(
         self,
         *,

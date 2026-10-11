@@ -14,14 +14,14 @@ for an in-memory fake of the API to test applications against.
 from .client import DEMO_HOST, LIVE_HOST, STREAM_URL, CapitalClient
 from .enums import TradeDirection, TradeInstrument, TradeMode, WorkingOrderType
 from .errors import APIError, AuthError, CapitalError, StreamError
-from .models import Confirmation
+from .models import CloseEvent, Confirmation
 from .hours import is_closing_for_day, is_closing_for_week, is_market_closed
 from .streaming import PriceStream, Quote
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 __all__ = [
-    "CapitalClient", "PriceStream", "Quote", "Confirmation",
+    "CapitalClient", "PriceStream", "Quote", "Confirmation", "CloseEvent",
     "TradeDirection", "TradeInstrument", "TradeMode", "WorkingOrderType",
     "CapitalError", "AuthError", "APIError", "StreamError",
     "is_market_closed", "is_closing_for_day", "is_closing_for_week",

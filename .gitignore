@@ -15,3 +15,4 @@ tests/integration/observed.json
 tests/integration/.demo-journal.json
 tests/integration/.journal-*
 .coverage
+tests/integration/.demo-vix-hold.json

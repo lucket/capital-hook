@@ -53,6 +53,10 @@ asyncio.run(main())
   even when the deal is later rejected. Call `await client.confirm(reference)`: it returns a `Confirmation` (`accepted` / `rejected`).
   `confirmation.deal_id` is the id of the *order*; the id of the position it opened (the one `get_positions`, `close_position` and
   `update_position` use) is `confirmation.position_deal_id`.
+- **Stops and profit targets are attributes of the position**, set when opening (`stop_level`, `profit_level`, or distances / amounts) or edited with
+  `update_position`; they are not separate orders. When the market executes one, `await client.get_close_event(deal_id)` says how the position
+  ended - a `CloseEvent` with `source` (`SL`, `TP`, `USER` for a close request, `CLOSE_OUT` or `SYSTEM` for the broker), the closing `level`, and
+  `level_vs(stop_level)` to see how far past the stop the price jumped before it could execute. It is `None` while the position is open.
 - **After a timeout, reconcile instead of retrying.** If an open times out the server may still have executed it; look at
   `get_positions()` (or `find_deal_id`) before sending it again.
 - **Market lists need a filter.** `get_markets()` with no argument is answered with HTTP 500 by Capital.com; use
@@ -98,7 +102,8 @@ To test code that trades around opening hours, give the fake a schedule and a cl
 `FakeCapital` is a small state machine, not a canned responder: positions carry profit and loss, margin and balance follow, stop and
 profit levels trigger when you move the market (`fake.set_quote(...)`), working orders fill and expire (`fake.now` is the clock), opens can be
 rejected after the fact, and you can inject faults (`fake.fail_next(...)`, `fake.lose_response_next(...)` - the request executes but the
-client sees a timeout). `fake.check_invariants()` verifies its own books. Anything it assumes that Capital.com has not been observed to do is
+client sees a timeout). `fake.check_invariants()` verifies its own books. `fake.reject_next("MARKET_CLOSED")` makes the next open come back rejected with that reason, and
+`fake.close_out(deal_id)` has the broker close a position (margin call). Anything it assumes that Capital.com has not been observed to do is
 listed in `capital_hook.testing.ASSUMPTIONS`.
 
 ## Development
@@ -123,6 +128,8 @@ python -m venv venv && ./venv/bin/pip install -e ".[dev]"
 unless you set `CAPITAL_DEMO_IDENTITY`, `CAPITAL_DEMO_PASSWORD`, `CAPITAL_DEMO_API_KEY` **and** `CAPITAL_DEMO_ALLOW=1`. It only ever uses the
 DEMO host, refuses to trade an epic that already has positions or orders (default `BTCUSD`, override with `CAPITAL_DEMO_EPIC`), journals every
 deal it creates so a crashed run is cleaned up on the next start, and writes `tests/integration/observed.json` (no credentials). To look at or
-clean up what is left on the test epic: `python tests/integration/demo_cleanup.py [--yes]`.
+clean up what is left on the test epic: `python tests/integration/demo_cleanup.py [--yes]`. `test_demo_exits.py` puts a stop / profit level a few
+basis points from the price and records how the market executes it; `test_demo_vix.py` and `test_demo_vix_pause.py` record VIX's hours, rules and how
+orders behave while it is closed (run the latter during the daily pause - see the file's docstring).
 
 Not affiliated with Capital.com. Trading CFDs carries a high risk of losing money.

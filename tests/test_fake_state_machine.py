@@ -454,3 +454,18 @@ async def test_a_close_can_be_confirmed_and_reports_the_realised_profit(client, 
     confirmation = await client.confirm(reference, attempts=1, delay=0)
     assert (confirmation.accepted, confirmation.status, confirmation.epic, confirmation.direction) == (True, "CLOSED", "GOLD", "SELL")
     assert confirmation.deal_id == deal_id and confirmation.raw["profit"] == pytest.approx((2050 - 2001) * 2)
+
+
+async def test_lose_request_next_never_reaches_the_server_and_the_client_sees_a_timeout(client, fake):
+    fake.lose_request_next("POST", "/api/v1/positions")
+    with pytest.raises(httpx.TimeoutException):
+        await client.open_position("GOLD", 1, "BUY")
+    assert fake.positions == {} and fake.confirmations == {}                     # unlike lose_response_next: nothing was executed
+    assert len((await client.confirm(await client.open_position("GOLD", 1, "BUY"), attempts=1, delay=0)).affected_deals) == 1      # and it applies once
+
+
+async def test_the_reported_size_increment_defaults_to_the_minimum_and_can_be_set(client, fake):
+    fake.min_deal_size["GOLD"] = 1
+    assert (await client.get_market("GOLD"))["dealingRules"]["minSizeIncrement"]["value"] == 1
+    fake.size_increment["GOLD"] = 0.5
+    assert (await client.get_market("GOLD"))["dealingRules"]["minSizeIncrement"]["value"] == 0.5
