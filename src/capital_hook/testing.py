@@ -20,6 +20,7 @@ class FakeCapital:
         self.deleted = []         # dealIds closed
         self.balance = 10000.0
         self.login_ok = True
+        self.positions_failures = 0   # next N `GET /positions` answer 500
         self.fail_open = False    # reject POST /positions with a 400
         self.logins = 0
         self.valid_cst = None     # current session token; expire_session() invalidates it
@@ -66,6 +67,9 @@ class FakeCapital:
             self.preferences = json.loads(request.read())
             return httpx.Response(200, json={"status": "SUCCESS"})
         if path == "/api/v1/positions" and method == "GET":
+            if self.positions_failures > 0:
+                self.positions_failures -= 1
+                return httpx.Response(500, json={"errorCode": "error.server"})
             return httpx.Response(200, json={"positions": [
                 {"market": {"epic": p["epic"]},
                  "position": {"size": p["size"], "direction": p["direction"], "upl": 0.0, "level": p["level"], "dealId": d, "createdDateUTC": "2026-07-12T10:00:00"}}

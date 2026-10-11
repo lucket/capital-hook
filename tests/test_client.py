@@ -106,3 +106,16 @@ async def test_prices_without_quote_is_an_error(client, fake):
     from capital_hook import CapitalError
     with pytest.raises(CapitalError, match="no ask/bid"):
         await client.get_prices("GOLD")
+
+
+async def test_find_deal_id_retries_through_transient_errors(client, fake):
+    await client.open_position("GOLD", 1, "BUY")
+    fake.positions_failures = 2
+    assert await client.find_deal_id("GOLD", 1, "BUY", attempts=4, delay=0)
+
+
+async def test_find_deal_id_raises_if_the_last_attempt_also_failed(client, fake):
+    await client.open_position("GOLD", 1, "BUY")
+    fake.positions_failures = 5
+    with pytest.raises(APIError):
+        await client.find_deal_id("GOLD", 1, "BUY", attempts=3, delay=0)

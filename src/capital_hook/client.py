@@ -224,17 +224,28 @@ class CapitalClient:
         """Look up the deal id of a just-opened position (the open call only returns a reference).
 
         Polls the open positions up to `attempts` times, `delay` seconds apart, for one matching epic,
-        size and direction whose id is not in `exclude`.
+        size and direction whose id is not in `exclude`. Errors while polling are retried; if the last
+        attempt also failed, that error is raised (None means "listed fine, no match").
         """
         direction = direction.value if isinstance(direction, TradeDirection) else direction
         excluded = set(exclude)
+        last_error: Exception | None = None
         for attempt in range(attempts):
-            for position in await self.get_positions():
-                if (position["epic"] == epic and float(position["size"]) == float(size)
-                        and position["direction"] == direction and position["deal_id"] not in excluded):
-                    return position["deal_id"]
+            try:
+                positions = await self.get_positions()
+            except (CapitalError, httpx.HTTPError) as exc:      # transient trouble: try again
+                last_error = exc
+                log.warning("could not list positions (attempt %d/%d): %s", attempt + 1, attempts, exc)
+            else:
+                last_error = None
+                for position in positions:
+                    if (position["epic"] == epic and float(position["size"]) == float(size)
+                            and position["direction"] == direction and position["deal_id"] not in excluded):
+                        return position["deal_id"]
             if attempt < attempts - 1:
                 await asyncio.sleep(delay)
+        if last_error is not None:
+            raise last_error
         return None
 
     async def close_position(self, deal_id: str) -> dict:
