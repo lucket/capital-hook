@@ -44,6 +44,8 @@ class FakeCapital:
         self._refs = itertools.count(1)
         self.quote = {"GOLD": (2000.0, 2001.0)}   # epic -> (bid, ask)
         self.markets = {"GOLD": "COMMODITIES", "US100": "INDICES"}
+        self.min_deal_size = {}        # epic -> minimum deal size (default 0.01)
+        self.market_status = {}        # epic -> "TRADEABLE" (default) | "CLOSED" ...
         self.hours = {"mon": ["00:00 - 23:59"], "tue": ["00:00 - 23:59"], "wed": ["00:00 - 23:59"],
                       "thu": ["00:00 - 23:59"], "fri": ["00:00 - 21:55"], "sat": [], "sun": ["23:00 - 23:59"]}
         # side tables: richer per-deal data that must not change the shape of `positions`
@@ -129,8 +131,18 @@ class FakeCapital:
             return httpx.Response(200, json={"markets": [{"epic": e, "instrumentType": t} for e, t in self.markets.items()]})
         if path.startswith("/api/v1/markets/") and method == "GET":
             epic = path.rsplit("/", 1)[1]
-            bid, ask = self.quote[epic]
-            return httpx.Response(200, json={"snapshot": {"bid": bid, "offer": ask}, "instrument": {"openingHours": self.hours}})
+            if epic not in self.quote and epic not in self.markets:
+                return self._error(404, "error.not-found.epic")
+            bid, ask = self.quote.get(epic, (0, 0))
+            min_size = self.min_deal_size.get(epic, 0.01)
+            return httpx.Response(200, json={
+                "instrument": {"epic": epic, "name": epic, "type": self.markets.get(epic, ""), "lotSize": 1, "currency": "USD", "openingHours": self.hours},
+                "dealingRules": {"minDealSize": {"unit": "POINTS", "value": min_size},
+                                 "minStepDistance": {"unit": "POINTS", "value": 0.01},
+                                 "minNormalStopOrLimitDistance": {"unit": "PERCENTAGE", "value": 1.0},
+                                 "maxStopOrLimitDistance": {"unit": "PERCENTAGE", "value": 90.0}},
+                "snapshot": {"marketStatus": self.market_status.get(epic, "TRADEABLE"), "bid": bid, "offer": ask},
+            })
         if path == "/api/v1/accounts" and method == "GET":
             return httpx.Response(200, json={"accounts": [{"symbol": "$", "balance": {"balance": self.balance, "deposit": self.balance, "profitLoss": 0.0, "available": self.balance}}]})
         if path == "/api/v1/accounts/preferences" and method == "GET":
