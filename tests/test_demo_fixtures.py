@@ -231,3 +231,49 @@ def test_record_hold_never_overwrites_a_record_that_names_another_deal(tmp_path)
     path.write_text('{"deal_id": "OTHER"}')
     assert "different deal" in cleanup.hold_record([{"deal_id": "D1"}], path) and path.read_text() == '{"deal_id": "OTHER"}'
     assert "recorded OTHER" in cleanup.hold_record([{"deal_id": "OTHER"}], path)
+
+
+async def _cleanup_world(tmp_path):
+    from capital_hook import CapitalClient
+    from capital_hook.testing import FakeCapital
+    cleanup = _load_cleanup_module()
+    fake = FakeCapital()
+    client = CapitalClient("me", "pw", "key", http=fake.client())
+    return cleanup, fake, client, [], tmp_path / "hold.json"
+
+
+async def test_cleanup_lists_a_position_and_a_working_order_with_the_fields_the_client_really_returns(tmp_path):
+    """It once crashed with KeyError: 'level' - a position's flat dict has open_price, not level."""
+    cleanup, fake, client, lines, hold = await _cleanup_world(tmp_path)
+    await client.open_position("GOLD", 2, "BUY")
+    await client.create_working_order("GOLD", "BUY", 1, 1900)
+    assert await cleanup.run(client, "GOLD", False, False, hold, lines.append) == 0
+    text = "\n".join(lines)
+    assert "GOLD on the DEMO account: 1 position(s), 1 working order(s)" in text and "opened at 2001.0" in text and "at level 1900.0" in text
+    assert "nothing changed" in text and len(fake.positions) == 1 and len(fake.orders) == 1
+
+
+async def test_cleanup_with_yes_closes_and_cancels_only_that_epic(tmp_path):
+    cleanup, fake, client, lines, hold = await _cleanup_world(tmp_path)
+    fake.set_quote("US100", 15000.0, 15001.0)
+    fake.markets["US100"] = "INDICES"
+    await client.open_position("GOLD", 2, "BUY")
+    await client.create_working_order("GOLD", "BUY", 1, 1900)
+    await client.open_position("US100", 1, "BUY")
+    await cleanup.run(client, "GOLD", True, False, hold, lines.append)
+    assert [p["epic"] for p in fake.positions.values()] == ["US100"] and fake.orders == {} and "closed / cancelled." in lines
+
+
+async def test_cleanup_record_hold_lists_then_records_and_changes_nothing_else(tmp_path):
+    import json
+    cleanup, fake, client, lines, hold = await _cleanup_world(tmp_path)
+    await client.open_position("GOLD", 2, "BUY")
+    (deal_id,) = fake.positions
+    await cleanup.run(client, "GOLD", False, True, hold, lines.append)
+    assert json.loads(hold.read_text())["deal_id"] == deal_id and f"recorded {deal_id}" in lines[-1] and len(fake.positions) == 1
+
+
+async def test_cleanup_with_nothing_open_says_so_quietly(tmp_path):
+    cleanup, fake, client, lines, hold = await _cleanup_world(tmp_path)
+    await cleanup.run(client, "GOLD", False, False, hold, lines.append)
+    assert lines == ["GOLD on the DEMO account: 0 position(s), 0 working order(s)"]

@@ -36,6 +36,29 @@ def hold_record(positions: list, path: Path) -> str:
     return f"recorded {deal_id} in {path.name}"
 
 
+async def run(client, epic: str, apply: bool, record_hold: bool, hold_path: Path, out=print) -> int:
+    """List (and optionally close / cancel, or record) what is open on ``epic``. ``client`` is already logged in."""
+    positions = [p for p in await client.get_positions() if p["epic"] == epic]
+    orders = [o for o in await client.get_working_orders() if o["epic"] == epic]
+    out(f"{epic} on the DEMO account: {len(positions)} position(s), {len(orders)} working order(s)")
+    for p in positions:
+        out(f"  position {p['deal_id']}: {p['direction']} {p['size']} opened at {p['open_price']}   (pnl {p['pnl']})")
+    for o in orders:
+        out(f"  order    {o['deal_id']}: {o['direction']} {o['size']} at level {o['level']}   ({o['type']})")
+    if record_hold:
+        out(hold_record(positions, hold_path))
+        return 0
+    if apply:
+        for p in positions:
+            await client.close_position(p["deal_id"])
+        for o in orders:
+            await client.cancel_working_order(o["deal_id"])
+        out("closed / cancelled.")
+    elif positions or orders:
+        out("nothing changed; run again with --yes to close / cancel them.")
+    return 0
+
+
 async def main(apply: bool, record_hold: bool = False) -> int:
     reason = h.missing_requirements()
     if reason or h.dry_run():
@@ -46,27 +69,9 @@ async def main(apply: bool, record_hold: bool = False) -> int:
     assert client.host == DEMO_HOST and "demo" in client.host, "refusing to run: not the demo host"
     try:
         await client.login()
-        positions = [p for p in await client.get_positions() if p["epic"] == epic]
-        orders = [o for o in await client.get_working_orders() if o["epic"] == epic]
-        print(f"{epic} on the DEMO account: {len(positions)} position(s), {len(orders)} working order(s)")
-        for p in positions:
-            print(f"  position {p['deal_id']}: {p['direction']} {p['size']} @ {p['level']}")
-        for o in orders:
-            print(f"  order    {o['deal_id']}: {o['direction']} {o['size']} @ {o['level']}")
-        if record_hold:
-            print(hold_record(positions, Path(__file__).parent / ".demo-vix-hold.json"))
-            return 0
-        if apply:
-            for p in positions:
-                await client.close_position(p["deal_id"])
-            for o in orders:
-                await client.cancel_working_order(o["deal_id"])
-            print("closed / cancelled.")
-        elif positions or orders:
-            print("nothing changed; run again with --yes to close / cancel them.")
+        return await run(client, epic, apply, record_hold, Path(__file__).parent / ".demo-vix-hold.json")
     finally:
         await client.aclose()
-    return 0
 
 
 if __name__ == "__main__":
