@@ -73,14 +73,14 @@ async def test_open_find_and_close_a_position(client, fake):
         "deal_id": deal_id, "created_date": "2026-07-12T10:00:00"}
     assert await client.find_deal_id("GOLD", 1.5, "BUY", exclude=[deal_id], attempts=2, delay=0) is None
     assert await client.find_deal_id("GOLD", 9, "BUY", attempts=1) is None
-    assert (await client.close_position(deal_id))["dealReference"] == f"c_{deal_id}"
+    assert (await client.close_position(deal_id))["dealReference"] == f"p_{deal_id}"
     assert fake.positions == {}
 
 
 async def test_api_errors_carry_status_and_code(client, fake):
     with pytest.raises(APIError) as err:
         await client.close_position("nope")
-    assert err.value.status_code == 404 and err.value.error_code == "error.not-found"
+    assert err.value.status_code == 404 and err.value.error_code == "error.not-found.dealId"
     fake.fail_open = True
     with pytest.raises(APIError) as err:
         await client.open_position("GOLD", 1, "BUY")
