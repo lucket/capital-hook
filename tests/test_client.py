@@ -119,3 +119,15 @@ async def test_find_deal_id_raises_if_the_last_attempt_also_failed(client, fake)
     fake.positions_failures = 5
     with pytest.raises(APIError):
         await client.find_deal_id("GOLD", 1, "BUY", attempts=3, delay=0)
+
+
+async def test_close_can_be_made_to_fail(client, fake):
+    await client.open_position("GOLD", 1, "BUY")
+    deal_id = await client.find_deal_id("GOLD", 1, "BUY", delay=0)
+    fake.fail_close = True
+    with pytest.raises(APIError) as err:
+        await client.close_position(deal_id)
+    assert err.value.status_code == 500 and deal_id in fake.positions
+    fake.fail_close = False
+    await client.close_position(deal_id)
+    assert fake.positions == {}

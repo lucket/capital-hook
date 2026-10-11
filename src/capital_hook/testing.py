@@ -5,8 +5,8 @@
     await client.login()
 
 `fake.positions`, `fake.deleted`, `fake.requests`, `fake.balance`, `fake.quote` ...
-can be inspected and changed to script scenarios; `login_ok = False` and
-`fail_open = True` make logins / position opens fail.
+can be inspected and changed to script scenarios; `login_ok = False`,
+`fail_open = True` and `fail_close = True` make logins / position opens / position closes fail.
 """
 import itertools
 import json
@@ -21,6 +21,7 @@ class FakeCapital:
         self.balance = 10000.0
         self.login_ok = True
         self.positions_failures = 0   # next N `GET /positions` answer 500
+        self.fail_close = False   # reject DELETE /positions/{id} with a 500
         self.fail_open = False    # reject POST /positions with a 400
         self.logins = 0
         self.valid_cst = None     # current session token; expire_session() invalidates it
@@ -84,6 +85,8 @@ class FakeCapital:
             self.positions[deal_id] = {"epic": data["epic"], "size": float(data["size"]), "direction": data["direction"], "level": ask if data["direction"] == "BUY" else bid}
             return httpx.Response(200, json={"dealReference": f"o_{deal_id}"})
         if path.startswith("/api/v1/positions/") and method == "DELETE":
+            if self.fail_close:
+                return httpx.Response(500, json={"errorCode": "error.server"})
             deal_id = path.rsplit("/", 1)[1]
             if deal_id not in self.positions:
                 return httpx.Response(404, json={"errorCode": "error.not-found"})
