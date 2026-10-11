@@ -24,7 +24,9 @@ async def test_open_confirm_inspect_and_close_a_position(demo_client, demo_marke
     if not confirmation.accepted:
         recorder.note("open_rejected", {"deal_status": confirmation.deal_status, "reason": confirmation.reason})
         pytest.skip(f"the minimum-size open was not accepted ({confirmation.deal_status}/{confirmation.reason}); see observed.json")
-    deal_id = confirmation.deal_id
+    deal_id = confirmation.position_deal_id                      # confirmation.deal_id is the order's id, not the position's
+    recorder.note("confirmation_ids", {"order_id_differs_from_position_id": confirmation.deal_id != deal_id,
+                                       "affected_count": len(confirmation.affected_deals)})
     assert reference.startswith("o_") and deal_id and confirmation.epic == demo_market.epic and confirmation.direction == "BUY"
 
     positions = await demo_client.get_positions()
@@ -80,7 +82,7 @@ async def test_stops_can_be_set_updated_and_invalid_ones_are_refused(demo_client
     if not confirmation.accepted:
         recorder.note("open_with_stops", {"deal_status": confirmation.deal_status, "reason": confirmation.reason})
         pytest.skip("open with stops was not accepted; see observed.json")
-    deal_id = confirmation.deal_id
+    deal_id = confirmation.position_deal_id
     position = await demo_client.get_position(deal_id)
     notes = {"stop_level_reported": "stop_level" in position, "profit_level_reported": "profit_level" in position}
     new_stop = h.level(demo_market.ask, 0.8, demo_market.decimals)
@@ -114,7 +116,8 @@ async def test_working_order_lifecycle_and_a_cancelled_order_never_becomes_a_pos
     assert len(listed) == 1 and listed[0]["epic"] == demo_market.epic and listed[0]["type"] == "LIMIT"
     assert listed[0]["level"] == pytest.approx(level)
 
-    notes = {"confirmation": {"deal_status": confirmation.deal_status, "reason": confirmation.reason, "status": confirmation.status}, "listed_keys": sorted(listed[0])}
+    notes = {"confirmation": {"deal_status": confirmation.deal_status, "reason": confirmation.reason, "status": confirmation.status,
+                             "affected": [d.get("status") for d in confirmation.affected_deals]}, "listed_keys": sorted(listed[0])}
     new_level = h.level(demo_market.bid, 0.6, demo_market.decimals)
     notes["update_reference_prefix"] = (await demo_client.update_working_order(order_id, level=new_level))[:2]
     assert [o["level"] for o in await demo_client.get_working_orders() if o["deal_id"] == order_id] == [pytest.approx(new_level)]
@@ -148,11 +151,13 @@ async def test_same_direction_and_opposite_orders_probe(demo_client, demo_market
 
     steps["after_buy"] = await snapshot()
     _, second = await tracker.open(demo_market.epic, demo_market.min_size, "BUY")
-    steps["second_buy"] = {"deal_status": second.deal_status, "same_deal_id": second.deal_id == first.deal_id}
+    steps["second_buy"] = {"deal_status": second.deal_status, "same_position": second.position_deal_id == first.position_deal_id,
+                              "affected": [d.get("status") for d in second.affected_deals]}
     steps["after_second_buy"] = await snapshot()
     tracker.adopt_positions(ids(await demo_client.get_positions()))
     _, opposite = await tracker.open(demo_market.epic, demo_market.min_size, "SELL")
-    steps["sell"] = {"deal_status": opposite.deal_status, "reason": opposite.reason}
+    steps["sell"] = {"deal_status": opposite.deal_status, "reason": opposite.reason,
+                     "affected": [d.get("status") for d in opposite.affected_deals], "opened_a_position": bool(opposite.position_deal_id)}
     steps["after_sell"] = await snapshot()
     tracker.adopt_positions(ids(await demo_client.get_positions()))
     recorder.note("netting_probe", steps)

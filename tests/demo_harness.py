@@ -204,7 +204,7 @@ async def sweep(client, journal: Journal) -> list[str]:
                 confirmation = await client.confirm(ident, attempts=1)
             except APIError:
                 continue
-            ident = confirmation.deal_id
+            ident = confirmation.position_deal_id or confirmation.deal_id
             if not ident:
                 continue
         if ident in positions:
@@ -229,8 +229,9 @@ async def _quiet(call, *args):
 class Tracker:
     """Creates deals on behalf of a test and guarantees they are closed / cancelled afterwards."""
 
-    def __init__(self, client, journal: Journal):
-        self.client, self.journal = client, journal
+    def __init__(self, client, journal: Journal, epic: str | None = None):
+        """``epic``: the market the suite trades. It was verified empty before the run, so at cleanup *everything* on it is ours."""
+        self.client, self.journal, self.epic = client, journal, epic
         self.positions: set[str] = set()
         self.orders: set[str] = set()
         self.references: set[str] = set()
@@ -239,9 +240,9 @@ class Tracker:
         reference = await self.client.open_position(epic, size, direction, **options)
         self._remember_reference(reference)                    # recorded before anything else is done with it
         confirmation = await self.client.confirm(reference)
-        if confirmation.deal_id:
-            self.positions.add(confirmation.deal_id)
-            self.journal.add("position", confirmation.deal_id)
+        if confirmation.position_deal_id:                      # the position's id, not the order's (confirmation.deal_id)
+            self.positions.add(confirmation.position_deal_id)
+            self.journal.add("position", confirmation.position_deal_id)
         return reference, confirmation
 
     async def create_order(self, epic, direction, size, level, kind="LIMIT", **options):
@@ -264,11 +265,19 @@ class Tracker:
             self.journal.add("position", deal_id)
 
     async def cleanup(self) -> None:
-        open_now = {p["deal_id"] for p in await self.client.get_positions()}
-        for deal_id in sorted(self.positions & open_now):
+        positions = await self.client.get_positions()
+        open_now = {p["deal_id"] for p in positions}
+        mine = self.positions & open_now
+        if self.epic:                                                   # safety net against an id mix-up: nothing else was on this epic
+            mine |= {p["deal_id"] for p in positions if p["epic"] == self.epic}
+        for deal_id in sorted(mine):
             await _quiet(self.client.close_position, deal_id)
-        pending = {o["deal_id"] for o in await self.client.get_working_orders()}
-        for deal_id in sorted(self.orders & pending):
+        orders = await self.client.get_working_orders()
+        pending = {o["deal_id"] for o in orders}
+        mine_orders = self.orders & pending
+        if self.epic:
+            mine_orders |= {o["deal_id"] for o in orders if o["epic"] == self.epic}
+        for deal_id in sorted(mine_orders):
             await _quiet(self.client.cancel_working_order, deal_id)
         for deal_id in self.positions:
             self.journal.remove("position", deal_id)

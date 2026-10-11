@@ -175,7 +175,7 @@ async def test_tracker_open_journals_the_reference_before_confirming(client, fak
     client.confirm = spy
     _, confirmation = await tracker.open("GOLD", 1, "BUY")
     assert seen == [["reference"]]                                                # on disk before anything else happens
-    assert tracker.positions == {confirmation.deal_id} and {"kind": "position", "id": confirmation.deal_id} in journal.entries()
+    assert tracker.positions == {confirmation.position_deal_id} and {"kind": "position", "id": confirmation.position_deal_id} in journal.entries()
 
 
 async def test_tracker_cleanup_closes_positions_cancels_orders_and_clears_the_journal(client, fake, journal):
@@ -191,7 +191,7 @@ async def test_tracker_cleanup_closes_positions_cancels_orders_and_clears_the_jo
 async def test_tracker_cleanup_tolerates_deals_that_are_already_gone(client, fake, journal):
     tracker = h.Tracker(client, journal)
     _, confirmation = await tracker.open("GOLD", 1, "BUY")
-    await client.close_position(confirmation.deal_id)
+    await client.close_position(confirmation.position_deal_id)
     await tracker.cleanup()
     assert tracker.positions == set()
 
@@ -210,3 +210,14 @@ async def test_tracker_adopt_positions_tracks_side_effect_deals(client, fake, jo
     tracker.adopt_positions(list(fake.positions))
     await tracker.cleanup()
     assert fake.positions == {}
+
+
+async def test_tracker_with_an_epic_closes_everything_left_on_it_even_if_ids_were_not_tracked(client, fake, journal):
+    """Safety net: the suite verified the epic was empty before it started, so anything on it at cleanup is ours."""
+    tracker = h.Tracker(client, journal, epic="GOLD")
+    fake.set_quote("US100", 15000.0, 15001.0)
+    await client.open_position("GOLD", 1, "BUY")                                 # opened behind the tracker's back (e.g. an id mix-up)
+    await client.create_working_order("GOLD", "BUY", 1, 1000)
+    await client.open_position("US100", 1, "BUY")                                # another market: left alone
+    await tracker.cleanup()
+    assert [p["epic"] for p in fake.positions.values()] == ["US100"] and fake.orders == {}

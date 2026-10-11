@@ -102,7 +102,7 @@ async def demo_market(demo_client, recorder):
 
 
 @pytest_asyncio.fixture(loop_scope="session")
-async def tracker(demo_client, journal):
-    t = h.Tracker(demo_client, journal)
+async def tracker(demo_client, demo_market, journal):
+    t = h.Tracker(demo_client, journal, epic=demo_market.epic)
     yield t
     await t.cleanup()

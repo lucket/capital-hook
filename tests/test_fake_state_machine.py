@@ -12,7 +12,7 @@ async def open_ok(client, epic="GOLD", size=1.0, direction="BUY", **options):
     reference = await client.open_position(epic, size, direction, **options)
     confirmation = await client.confirm(reference, attempts=1, delay=0)
     assert confirmation.accepted, confirmation.reason
-    return confirmation.deal_id
+    return confirmation.position_deal_id
 
 
 # ---------------------------------------------------------------- money

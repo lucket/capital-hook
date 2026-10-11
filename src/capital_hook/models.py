@@ -25,6 +25,15 @@ class Confirmation:
     raw: dict
 
     @property
+    def position_deal_id(self) -> str | None:
+        """The id of the position this order opened (``affectedDeals`` entry with status OPENED).
+
+        ``deal_id`` is the id of the *order*, which is not the id used by ``get_positions`` / ``close_position``:
+        a real confirmation carries both (the Postman example has ``dealId`` ...43 and an OPENED deal ...45).
+        """
+        return next((d.get("dealId") for d in self.affected_deals if d.get("status") == "OPENED"), None)
+
+    @property
     def accepted(self) -> bool:
         return self.deal_status == "ACCEPTED"
 

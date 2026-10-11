@@ -31,6 +31,8 @@ import httpx
 ASSUMPTIONS = {
     "rejection reasons": "Asynchronous rejections use plausible reasons (MARKET_CLOSED, MINIMUM_ORDER_SIZE_ERROR, INSUFFICIENT_FUNDS); "
                          "the real strings are not documented. Branch on dealStatus, never on reason.",
+    "confirmation ids": "An accepted open confirms with a dealId of its own (the order) and the position in affectedDeals[OPENED], as in the "
+                        "Postman example. For working orders the fake uses the working-order id for both - not yet observed.",
     "rejected confirmation shape": "A REJECTED confirmation has status DELETED, no dealId and no affectedDeals.",
     "activity statuses": "Opens and closes are logged as POSITION/ACCEPTED, orders as WORKING_ORDER CREATED / MODIFIED / CANCELLED / "
                          "EXECUTED / EXPIRED; the real sequence is not documented.",
@@ -271,13 +273,13 @@ class FakeCapital:
             return "INSUFFICIENT_FUNDS"
         return None
 
-    def _confirmation(self, reference: str, body: dict, level: float, deal_id: str | None, reason: str | None) -> dict:
+    def _confirmation(self, reference: str, body: dict, level: float, deal_id: str | None, reason: str | None, *, order_id: str | None = None) -> dict:
         data = {"date": self._stamp() + ".000", "status": "OPEN" if not reason else "DELETED", "reason": reason or "SUCCESS",
                 "dealStatus": "REJECTED" if reason else "ACCEPTED", "epic": body["epic"], "dealReference": reference,
                 "affectedDeals": [] if reason else [{"dealId": deal_id, "status": "OPENED"}], "level": level, "size": float(body["size"]),
                 "direction": body["direction"], "guaranteedStop": False, "trailingStop": False}
         if not reason:
-            data["dealId"] = deal_id
+            data["dealId"] = order_id or deal_id            # an order's id; for an opened position it differs from the position's id
         self.confirmations[reference] = data
         return data
 
@@ -413,7 +415,7 @@ class FakeCapital:
         self.positions[deal_id] = {"epic": epic, "size": float(body["size"]), "direction": body["direction"], "level": level}
         self.meta[deal_id] = {"dealReference": f"p_{deal_id}", "stopLevel": body.get("stopLevel"), "profitLevel": body.get("profitLevel"),
                               "created": self._stamp(), "order": None}
-        self._confirmation(reference, body, level, deal_id, None)
+        self._confirmation(reference, body, level, deal_id, None, order_id=self._new_id("OD"))
         self._log("POSITION", "ACCEPTED", deal_id, epic, dealReference=reference, size=float(body["size"]), direction=body["direction"], level=level)
         return httpx.Response(200, json={"dealReference": reference})
 
@@ -513,7 +515,8 @@ class FakeCapital:
             if deal_id in self._issued and sum(1 for a in self.activity if a["dealId"] == deal_id and a["type"] == "POSITION") < 2:
                 problems.append(f"{deal_id} was closed without a close record")
         for reference, c in self.confirmations.items():
-            deal_id = c.get("dealId")
+            opened = next((a["dealId"] for a in c.get("affectedDeals", []) if a.get("status") == "OPENED"), None)
+            deal_id = opened if opened and opened != c.get("dealId") else c.get("dealId")      # an opened position, else the working order
             if c["dealStatus"] == "ACCEPTED":
                 known = (deal_id in self.positions or deal_id in self.orders or deal_id in closed_ids
                          or any(o == deal_id for o, _ in self._fills)
