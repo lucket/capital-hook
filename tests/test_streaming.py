@@ -197,3 +197,131 @@ async def test_reconnect_uses_a_fresh_session_when_the_old_one_expired(make_stre
     await until(lambda: len(server.subs()) == 2)                     # resubscribed after the reconnect
     first, second = [m for m in server.messages if m["destination"] == "marketData.subscribe"]
     assert first["cst"] != second["cst"] and make_stream.fake.logins == 2
+
+
+# ---------------------------------------------------------------- aclose / subscribed_epics
+async def test_subscribed_epics_lists_what_was_subscribed_across_connections(make_stream, server):
+    stream = make_stream(max_per_connection=1, seed_from_rest=False)
+    assert stream.subscribed_epics == set()
+    await stream.subscribe("A")
+    await stream.subscribe("B")
+    assert stream.subscribed_epics == {"A", "B"} and len(stream._connections) == 2
+    await stream.unsubscribe("A")
+    assert stream.subscribed_epics == {"B"}
+
+
+async def test_aclose_closes_every_connection_and_forgets_the_epics(make_stream, server):
+    stream = make_stream(max_per_connection=1, seed_from_rest=False)
+    await stream.subscribe("A")
+    await stream.subscribe("B")
+    await stream.aclose()
+    assert stream._connections == [] and stream.subscribed_epics == set()
+    await until(lambda: len(server.connections) == 2 and all(c.close_code is not None for c in server.connections))
+
+
+async def test_aclose_is_safe_when_nothing_was_ever_subscribed(make_stream):
+    await make_stream().aclose()
+
+
+# ---------------------------------------------------------------- bad input and failures never kill the stream
+async def test_a_malformed_message_is_logged_and_the_stream_keeps_working(make_stream, server, caplog):
+    stream = make_stream(seed_from_rest=False)
+    await stream.subscribe("GOLD")
+    await until(lambda: server.connections)
+    await server.connections[0].send("this is not json")
+    await server.connections[0].send(json.dumps({"destination": "quote", "payload": {"epic": "GOLD"}}))          # a quote without prices
+    await server.connections[0].send(json.dumps({"status": "OK", "destination": "quote", "payload": {"epic": "GOLD", "bid": 1.0, "ofr": 2.0, "timestamp": 5}}))
+    await until(lambda: Quote(epic="GOLD", bid=1.0, ask=2.0, timestamp=5) in make_stream.quotes)
+    assert caplog.text.count("could not process stream message") == 2
+
+
+async def test_a_rejected_stream_message_is_logged_not_raised(make_stream, server, caplog):
+    stream = make_stream(seed_from_rest=False)
+    await stream.subscribe("GOLD")
+    await until(lambda: server.connections)
+    await server.connections[0].send(json.dumps({"status": "ERROR", "destination": "marketData.subscribe", "payload": {"errorCode": "bad session"}}))
+    await until(lambda: "stream message rejected" in caplog.text)
+    assert stream.subscribed_epics == {"GOLD"}
+
+
+async def test_a_failing_quote_callback_does_not_stop_later_quotes(make_stream, server, caplog):
+    seen = []
+
+    def flaky(quote):
+        seen.append(quote)
+        if len(seen) == 1:
+            raise RuntimeError("callback bug")
+
+    client = CapitalClient("me", "pw", "key", http=make_stream.fake.client())
+    await client.login()
+    stream = PriceStream(client, flaky, url=server.url, reconnect_delay=0.05, ping_every=None, seed_from_rest=False)
+    try:
+        await stream.subscribe("GOLD")
+        await until(lambda: len(seen) >= 1)
+        await server.connections[0].send(json.dumps({"status": "OK", "destination": "quote", "payload": {"epic": "GOLD", "bid": 3.0, "ofr": 4.0, "timestamp": 6}}))
+        await until(lambda: any(q.bid == 3.0 for q in seen))
+        assert "callback bug" in caplog.text
+    finally:
+        await stream.aclose()
+
+
+async def test_ping_all_logs_a_failing_connection_and_still_pings_the_others(make_stream, server, caplog):
+    stream = make_stream(max_per_connection=1, seed_from_rest=False)
+    await stream.subscribe("A")
+    await stream.subscribe("B")
+    broken, healthy = stream._connections
+
+    async def boom():
+        raise RuntimeError("socket gone")
+
+    broken.ping = boom
+    await stream.ping_all()
+    await until(lambda: any(m["destination"] == "ping" for m in server.messages))
+    assert "ping failed" in caplog.text
+
+
+async def test_the_automatic_ping_loop_survives_a_failed_ping(make_stream, server, caplog):
+    stream = make_stream(ping_every=0.05, seed_from_rest=False)
+    await stream.subscribe("GOLD")
+    conn = stream._connections[0]
+    original = conn.ping
+    calls = []
+
+    async def flaky():
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("first ping fails")
+        await original()
+
+    conn.ping = flaky
+    await until(lambda: len(calls) >= 3)
+    assert "ping failed" in caplog.text
+
+
+async def test_reconnect_delay_doubles_up_to_a_cap_of_30_seconds(make_stream, monkeypatch):
+    stream = make_stream(connect_timeout=0.5, reconnect_delay=10.0, seed_from_rest=False)
+    stream.url = "ws://127.0.0.1:9"
+    sleeps, real_sleep = [], asyncio.sleep
+
+    async def recording(delay, *a, **kw):
+        if delay >= 1:
+            sleeps.append(delay)
+            delay = 0.001
+        await real_sleep(delay, *a, **kw)
+
+    monkeypatch.setattr("capital_hook.streaming.asyncio.sleep", recording)
+    with pytest.raises(StreamError):
+        await stream.subscribe("GOLD")
+    assert sleeps[:4] == [10.0, 20.0, 30.0, 30.0], sleeps[:6]   # the first retry waits the configured delay (it used to wait twice that)
+
+
+async def test_a_client_that_is_not_logged_in_yet_gets_a_session_on_the_first_reconnect(server):
+    fake = FakeCapital()
+    client = CapitalClient("me", "pw", "key", http=fake.client())              # never logged in
+    stream = PriceStream(client, lambda q: None, url=server.url, reconnect_delay=0.05, ping_every=None, seed_from_rest=False)
+    try:
+        await stream.subscribe("GOLD")                                          # attempt 1 fails (no session); the retry logs in and connects
+        assert client.authenticated and stream.subscribed_epics == {"GOLD"}
+        await until(lambda: server.subs() == ["GOLD"])
+    finally:
+        await stream.aclose()

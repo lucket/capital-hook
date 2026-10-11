@@ -37,3 +37,23 @@ def test_is_closing_for_week_uses_a_sunday_to_saturday_week():
     assert not is_closing_for_week(BTCUSD, now=saturday.replace(hour=12))
     assert not is_closing_for_week(BTCUSD, now=datetime(2024, 1, 7, 23, 59))      # Sunday: a trading day, not the end of the week
     assert not is_closing_for_week(BTCUSD, now=at(23, 59))
+
+
+class Localized(datetime):
+    """A datetime whose %a is not English, as on a machine with an Italian / French locale."""
+
+    NAMES = {"Mon": "lun", "Tue": "mar", "Wed": "mer", "Thu": "gio", "Fri": "ven", "Sat": "sab", "Sun": "dom"}
+
+    def strftime(self, fmt):
+        out = super().strftime(fmt)
+        return self.NAMES.get(out, out) if fmt == "%a" else out
+
+
+def test_the_weekday_does_not_depend_on_the_machines_locale():
+    tuesday_noon = Localized(2024, 1, 2, 12, 0)
+    assert tuesday_noon.strftime("%a") == "mar"                       # what an Italian machine would give
+    assert not is_market_closed(BTCUSD, now=tuesday_noon)
+    assert not is_closing_for_day(BTCUSD, now=tuesday_noon)
+    assert is_closing_for_week(BTCUSD, now=Localized(2024, 1, 6, 23, 59))
+    only_tuesday = {"tue": ["09:00 - 17:00"]}
+    assert not is_market_closed(only_tuesday, now=Localized(2024, 1, 2, 10, 0)) and is_market_closed(only_tuesday, now=Localized(2024, 1, 3, 10, 0))

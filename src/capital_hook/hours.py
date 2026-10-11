@@ -11,6 +11,11 @@ from datetime import datetime, timedelta, timezone
 _WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
 
 
+def _day(when: datetime) -> str:
+    """Three-letter lowercase English weekday, independent of the machine's locale (``strftime("%a")`` is not)."""
+    return _WEEKDAYS[(when.weekday() + 1) % 7]          # _WEEKDAYS starts on Sunday, weekday() on Monday
+
+
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -33,7 +38,7 @@ def _range(rng: str, base: datetime) -> tuple[datetime, datetime]:
 def is_market_closed(hours: dict, *, minutes: float = 2, now: datetime | None = None) -> bool:
     """True when the market is closed now, or closes within `minutes`."""
     now = now or _now_utc()
-    day_hours = hours.get(now.strftime("%a").lower(), [])
+    day_hours = hours.get(_day(now), [])
     if not day_hours:
         return True                       # never opens today
     for rng in day_hours:
@@ -46,7 +51,7 @@ def is_market_closed(hours: dict, *, minutes: float = 2, now: datetime | None = 
 def is_closing_for_day(hours: dict, *, minutes: float = 2, now: datetime | None = None) -> bool:
     """True when today's *last* session is over, or ends within `minutes`."""
     now = now or _now_utc()
-    day_hours = hours.get(now.strftime("%a").lower(), [])
+    day_hours = hours.get(_day(now), [])
     if not day_hours:
         return True                       # closed the whole day
     start, end = _range(day_hours[-1], now)
@@ -66,7 +71,7 @@ def is_closing_for_week(hours: dict, *, minutes: float = 2, now: datetime | None
         return False
 
     now = now or _now_utc()
-    today = now.strftime("%a").lower()
+    today = _day(now)
     if today != last_day:
         return False
     ref = now + timedelta(days=(_WEEKDAYS.index(last_day) - _WEEKDAYS.index(today)) % 7)

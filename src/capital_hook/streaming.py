@@ -89,6 +89,7 @@ class _Connection:
         delay = self._stream.reconnect_delay
         first_attempt = True
         while not self._closing:
+            wait = self._stream.reconnect_delay               # after a clean close by the server: the base delay
             try:
                 if not first_attempt:
                     await self._refresh_session()           # the REST session may have expired while we were disconnected
@@ -107,13 +108,14 @@ class _Connection:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - any failure -> reconnect
-                log.warning("price stream error: %s; reconnecting in %.1fs", exc, delay)
-                delay = min(delay * 2, 30.0)
+                wait = delay
+                log.warning("price stream error: %s; reconnecting in %.1fs", exc, wait)
+                delay = min(delay * 2, 30.0)                  # the next failure waits longer, this one waits `wait`
             finally:
                 self._ws = None
                 self._connected.clear()
             if not self._closing:
-                await asyncio.sleep(delay)
+                await asyncio.sleep(wait)
 
     async def _refresh_session(self) -> None:
         """A harmless REST call: if the session expired, the client logs in again, so the tokens we resubscribe with are valid."""
