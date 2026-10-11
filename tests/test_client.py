@@ -1,6 +1,8 @@
 import httpx
 import pytest
 
+from datetime import datetime
+
 from capital_hook import APIError, AuthError, CapitalClient, TradeDirection, TradeMode
 from capital_hook.testing import FakeCapital
 
@@ -65,22 +67,23 @@ async def test_host_follows_mode_and_set_mode_logs_in_again(client, fake):
 
 
 async def test_open_find_and_close_a_position(client, fake):
+    fake.now = lambda: datetime(2026, 7, 12, 10, 0, 0)
     reference = await client.open_position("GOLD", 1.5, TradeDirection.BUY)
     assert reference.startswith("o_")
     deal_id = await client.find_deal_id("GOLD", 1.5, "BUY", delay=0)
     assert deal_id and (await client.get_positions())[0] == {
-        "epic": "GOLD", "size": 1.5, "direction": "BUY", "pnl": 0.0, "open_price": 2001.0,
+        "epic": "GOLD", "size": 1.5, "direction": "BUY", "pnl": -1.5, "open_price": 2001.0,       # bought at the ask 2001, marked at the bid 2000
         "deal_id": deal_id, "created_date": "2026-07-12T10:00:00"}
     assert await client.find_deal_id("GOLD", 1.5, "BUY", exclude=[deal_id], attempts=2, delay=0) is None
     assert await client.find_deal_id("GOLD", 9, "BUY", attempts=1) is None
-    assert (await client.close_position(deal_id))["dealReference"] == f"c_{deal_id}"
+    assert (await client.close_position(deal_id))["dealReference"] == f"p_{deal_id}"
     assert fake.positions == {}
 
 
 async def test_api_errors_carry_status_and_code(client, fake):
     with pytest.raises(APIError) as err:
         await client.close_position("nope")
-    assert err.value.status_code == 404 and err.value.error_code == "error.not-found"
+    assert err.value.status_code == 404 and err.value.error_code == "error.not-found.dealId"
     fake.fail_open = True
     with pytest.raises(APIError) as err:
         await client.open_position("GOLD", 1, "BUY")

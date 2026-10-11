@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Iterable
 
+import httpx
 from websockets.asyncio.client import ClientConnection, connect
 
 from .client import STREAM_URL, CapitalClient
@@ -86,8 +87,13 @@ class _Connection:
 
     async def _run(self) -> None:
         delay = self._stream.reconnect_delay
+        first_attempt = True
         while not self._closing:
+            wait = self._stream.reconnect_delay               # after a clean close by the server: the base delay
             try:
+                if not first_attempt:
+                    await self._refresh_session()           # the REST session may have expired while we were disconnected
+                first_attempt = False
                 self._stream.client.session_tokens          # need a session before connecting
                 async with connect(self._stream.url, ping_interval=60, ping_timeout=30) as ws:
                     self._ws = ws
@@ -102,13 +108,21 @@ class _Connection:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - any failure -> reconnect
-                log.warning("price stream error: %s; reconnecting in %.1fs", exc, delay)
-                delay = min(delay * 2, 30.0)
+                wait = delay
+                log.warning("price stream error: %s; reconnecting in %.1fs", exc, wait)
+                delay = min(delay * 2, 30.0)                  # the next failure waits longer, this one waits `wait`
             finally:
                 self._ws = None
                 self._connected.clear()
             if not self._closing:
-                await asyncio.sleep(delay)
+                await asyncio.sleep(wait)
+
+    async def _refresh_session(self) -> None:
+        """A harmless REST call: if the session expired, the client logs in again, so the tokens we resubscribe with are valid."""
+        try:
+            await self._stream.client.ping()
+        except Exception as exc:  # noqa: BLE001 - best effort; a dead network is handled by the reconnect loop
+            log.debug("session refresh before reconnect failed: %s", exc)
 
     async def _handle(self, raw: str | bytes) -> None:
         try:
@@ -166,6 +180,7 @@ class PriceStream:
         self.ping_every = ping_every
         self.seed_from_rest = seed_from_rest
         self._connections: list[_Connection] = []
+        self._lock = asyncio.Lock()
 
     @property
     def subscribed_epics(self) -> set[str]:
@@ -178,19 +193,28 @@ class PriceStream:
         `on_quote` immediately, so a price exists before the first tick arrives.
         Raises :class:`StreamError` if the stream cannot be reached in `connect_timeout`.
         """
-        if epic in self.subscribed_epics:
-            return
-        conn = next((c for c in self._connections if len(c.epics) < self.max_per_connection), None)
-        if conn is None:
-            conn = _Connection(self)
-            self._connections.append(conn)
-        await conn.wait_connected(self.connect_timeout)
-        await conn.subscribe(epic)
+        async with self._lock:                  # placement + connect + request are serialised: no overfull connection, no duplicate request
+            if epic in self.subscribed_epics:
+                return
+            conn = next((c for c in self._connections if len(c.epics) < self.max_per_connection), None)
+            created = conn is None
+            if created:
+                conn = _Connection(self)
+                self._connections.append(conn)
+            try:
+                await conn.wait_connected(self.connect_timeout)
+                await conn.subscribe(epic)
+            except BaseException:
+                conn.epics.discard(epic)
+                if created:                     # do not leave a connection behind that keeps reconnecting for nobody
+                    self._connections.remove(conn)
+                    await conn.close()
+                raise
         if self.seed_from_rest:
             try:
                 ask, bid = await self.client.get_prices(epic)
                 await self._emit(Quote(epic=epic, bid=bid, ask=ask, timestamp=0))
-            except CapitalError as exc:
+            except (CapitalError, httpx.HTTPError) as exc:
                 log.warning("could not seed %s from REST: %s", epic, exc)
 
     async def unsubscribe(self, epic: str) -> None:
