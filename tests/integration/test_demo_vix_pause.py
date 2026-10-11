@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 import demo_harness as h
 from capital_hook import APIError
@@ -49,7 +50,7 @@ def now_utc():
     return datetime.now(timezone.utc).strftime("%a %H:%M:%S")
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(loop_scope="session")           # the demo connection lives on the session loop: a fixture that uses it must run there too
 async def vix_tracker(demo_client, journal):
     """Creates VIX deals through the harness (journalled, cleaned up). Refuses to run if VIX already holds something that is not ours."""
     held = json.loads(HOLD_FILE.read_text())["deal_id"] if HOLD_FILE.exists() else None
