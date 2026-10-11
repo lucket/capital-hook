@@ -14,3 +14,4 @@ _localtest.py
 tests/integration/observed.json
 tests/integration/.demo-journal.json
 tests/integration/.journal-*
+.coverage

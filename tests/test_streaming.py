@@ -146,3 +146,54 @@ async def test_unreachable_stream_raises_stream_error(make_stream):
     stream.url = "ws://127.0.0.1:9"                      # nothing listens here
     with pytest.raises(StreamError):
         await stream.subscribe("GOLD")
+
+
+# ---------------------------------------------------------------- defects found by reading the code (each failed before its fix)
+async def test_concurrent_subscribes_never_exceed_the_per_connection_limit(make_stream, server):
+    stream = make_stream(max_per_connection=40, seed_from_rest=False)
+    await asyncio.gather(*(stream.subscribe(f"E{i:03d}") for i in range(100)))
+    sizes = sorted(len(c.epics) for c in stream._connections)
+    assert sizes == [20, 40, 40] and len(server.connections) == 3
+    await until(lambda: len(server.subs()) == 100)
+    assert sorted(server.subs()) == sorted(f"E{i:03d}" for i in range(100))             # every epic once, none twice
+
+
+async def test_concurrent_subscribes_to_the_same_epic_send_one_request(make_stream, server):
+    stream = make_stream(seed_from_rest=False)
+    await asyncio.gather(*(stream.subscribe("GOLD") for _ in range(5)))
+    await asyncio.sleep(0.1)
+    assert server.subs() == ["GOLD"] and len(stream._connections) == 1
+
+
+async def test_a_transport_error_while_seeding_does_not_fail_the_subscription(make_stream, server, monkeypatch):
+    import httpx
+    stream = make_stream()
+
+    async def broken(epic):
+        raise httpx.ConnectError("network down")
+
+    monkeypatch.setattr(stream.client, "get_prices", broken)
+    await stream.subscribe("GOLD")                                   # used to raise after GOLD had already been subscribed
+    assert stream.subscribed_epics == {"GOLD"}
+    await until(lambda: Quote(epic="GOLD", bid=10.0, ask=10.5, timestamp=123) in make_stream.quotes)
+
+
+async def test_a_failed_subscribe_leaves_no_connection_behind(make_stream):
+    stream = make_stream(connect_timeout=0.3, seed_from_rest=False)
+    stream.url = "ws://127.0.0.1:9"                      # nothing listens here
+    with pytest.raises(StreamError):
+        await stream.subscribe("GOLD")
+    assert stream._connections == [] and stream.subscribed_epics == set()
+    with pytest.raises(StreamError):                                 # and a retry starts clean instead of piling up connections
+        await stream.subscribe("GOLD")
+    assert stream._connections == []
+
+
+async def test_reconnect_uses_a_fresh_session_when_the_old_one_expired(make_stream, server):
+    stream = make_stream(seed_from_rest=False)
+    server.drop_after_subscribe = 1
+    make_stream.fake.expire_session()                                # the REST session is dead, but the client does not know yet
+    await stream.subscribe("GOLD")
+    await until(lambda: len(server.subs()) == 2)                     # resubscribed after the reconnect
+    first, second = [m for m in server.messages if m["destination"] == "marketData.subscribe"]
+    assert first["cst"] != second["cst"] and make_stream.fake.logins == 2
