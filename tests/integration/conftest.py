@@ -4,6 +4,7 @@ Run:  CAPITAL_DEMO_IDENTITY=... CAPITAL_DEMO_PASSWORD=... CAPITAL_DEMO_API_KEY=.
 """
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -79,10 +80,16 @@ class Market:
     ask: float
     decimals: int
     instrument_type: str
+    min_distance_pct: float = 0.01          # minimum distance of a stop / profit level from the price, in percent (when the market states it in percent)
 
     @property
     def mid(self) -> float:
         return (self.bid + self.ask) / 2
+
+
+def _min_distance_pct(rules: dict) -> float:
+    entry = rules.get("minStopOrProfitDistance") or {}
+    return float(entry["value"]) if entry.get("unit") == "PERCENTAGE" and entry.get("value") else 0.01
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -92,13 +99,18 @@ async def demo_market(demo_client, recorder):
     market = await demo_client.get_market(epic)
     snapshot, rules = market["snapshot"], market["dealingRules"]
     if snapshot.get("marketStatus") != "TRADEABLE":
-        pytest.skip(f"{epic} is not tradeable right now (marketStatus={snapshot.get('marketStatus')})")
+        hours = market["instrument"].get("openingHours") or {}
+        now = datetime.now(timezone.utc)
+        pytest.skip(f"{epic} is not tradeable right now: marketStatus={snapshot.get('marketStatus')!r}, marketModes={snapshot.get('marketModes')}, "
+                    f"{now:%a %H:%M} UTC, published hours today {hours.get(now.strftime('%a').lower())}. "
+                    f"Try another market with CAPITAL_DEMO_EPIC, or see: python tests/integration/demo_market_status.py")
     busy = [p for p in await demo_client.get_positions() if p["epic"] == epic] + [o for o in await demo_client.get_working_orders() if o["epic"] == epic]
     if busy:
         pytest.skip(f"{epic} already has {len(busy)} position(s)/working order(s) on the demo account: refusing to trade it "
                     "(with hedging off, a new deal could merge into them). Choose another market with CAPITAL_DEMO_EPIC.")
     found = Market(epic=epic, min_size=float(rules["minDealSize"]["value"]), bid=float(snapshot["bid"]), ask=float(snapshot["offer"]),
-                   decimals=int(snapshot.get("decimalPlacesFactor", 2)), instrument_type=market["instrument"].get("type", ""))
+                   decimals=int(snapshot.get("decimalPlacesFactor", 2)), instrument_type=market["instrument"].get("type", ""),
+                   min_distance_pct=_min_distance_pct(rules))
     recorder.note("market", {"instrument_type": found.instrument_type, "min_deal_size": found.min_size, "decimals": found.decimals,
                              "dealing_rules": {k: v for k, v in rules.items() if isinstance(v, dict)}})
     return found

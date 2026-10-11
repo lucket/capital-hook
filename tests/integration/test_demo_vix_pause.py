@@ -19,11 +19,13 @@ Step 1 leaves one VIX contract open on the DEMO account on purpose (its id is ke
 import asyncio
 import json
 import os
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 import demo_harness as h
 from capital_hook import APIError
@@ -31,7 +33,21 @@ from capital_hook import APIError
 pytestmark = [pytest.mark.demo, pytest.mark.asyncio(loop_scope="session")]
 
 VIX = os.environ.get("CAPITAL_DEMO_VIX_EPIC", "VIX")
-HOLD_FILE = Path(os.environ.get("CAPITAL_DEMO_VIX_HOLD_PATH") or Path(__file__).parent / ".demo-vix-hold.json")
+REAL_HOLD_FILE = Path(__file__).parent / ".demo-vix-hold.json"
+
+
+def hold_path(env=os.environ, dry_run: bool | None = None) -> Path:
+    """Where the held position is recorded. The harness's own dry run (against the fake) must NEVER touch the real record of the real held position,
+    so a dry run gets a private temporary file unless a path is given explicitly."""
+    explicit = env.get("CAPITAL_DEMO_VIX_HOLD_PATH")
+    if explicit:
+        return Path(explicit)
+    if h.dry_run(env) if dry_run is None else dry_run:
+        return Path(tempfile.mkdtemp(prefix="vix-hold-")) / "hold.json"
+    return REAL_HOLD_FILE
+
+
+HOLD_FILE = hold_path()
 
 
 async def require(demo_client, demo_fake, want: str) -> dict:
@@ -49,7 +65,7 @@ def now_utc():
     return datetime.now(timezone.utc).strftime("%a %H:%M:%S")
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(loop_scope="session")           # the demo connection lives on the session loop: a fixture that uses it must run there too
 async def vix_tracker(demo_client, journal):
     """Creates VIX deals through the harness (journalled, cleaned up). Refuses to run if VIX already holds something that is not ours."""
     held = json.loads(HOLD_FILE.read_text())["deal_id"] if HOLD_FILE.exists() else None

@@ -5,7 +5,10 @@ puts one just a few basis points from the price of a market that trades around t
 records what ``GET /history/activity`` says: who closed it (``SL`` / ``TP``), at what level, and how far from the configured level.
 Nothing is left open: the tracker closes whatever remains.
 
-Waiting time per test: ``CAPITAL_DEMO_EXIT_WAIT`` seconds (default 240). A market that does not move far enough in that time is not an error.
+Waiting time per test: ``CAPITAL_DEMO_EXIT_WAIT`` seconds (default 240); the position is looked at every ``CAPITAL_DEMO_EXIT_POLL`` seconds (default 1).
+A market that does not move far enough in that time is not an error. How long it takes depends on the market, not on the polling: the level sits twice the
+market's minimum distance from the price, and a BUY's profit target fires when the BID gets there, so the spread has to be crossed first. A tight-spread,
+busy market is fast (try ``CAPITAL_DEMO_EPIC=US100``); BTCUSD's spread is 0.06 %, so its profit target needs a move of about 0.08 %. Run with ``-s`` to see the progress.
 """
 import asyncio
 import os
@@ -19,7 +22,8 @@ from capital_hook import APIError
 pytestmark = [pytest.mark.demo, pytest.mark.asyncio(loop_scope="session")]
 
 WAIT = float(os.environ.get("CAPITAL_DEMO_EXIT_WAIT", "240"))
-POLL = 2.0
+POLL = float(os.environ.get("CAPITAL_DEMO_EXIT_POLL", "1"))
+HEARTBEAT = 15.0
 
 
 async def position_gone(client, deal_id) -> bool:
@@ -32,22 +36,32 @@ async def position_gone(client, deal_id) -> bool:
         raise
 
 
-async def wait_for_exit(client, deal_id, demo_fake, move) -> float | None:
+@pytest.fixture
+def say(request):
+    """Write a line to the terminal at once, even while pytest captures output."""
+    reporter = request.config.pluginmanager.get_plugin("terminalreporter")
+    return (lambda text: reporter.write_line(f"    {text}")) if reporter else print
+
+
+async def wait_for_exit(client, deal_id, demo_fake, move, say=print) -> float | None:
     """Seconds until the position disappeared, or None if it is still open after ``WAIT``. In the harness's own dry run the fake market is moved."""
-    started = time.monotonic()
+    started = last_report = time.monotonic()
     if demo_fake is not None:
         move()
     while time.monotonic() - started < WAIT:
         if await position_gone(client, deal_id):
             return round(time.monotonic() - started, 1)
+        if demo_fake is None and time.monotonic() - last_report >= HEARTBEAT:
+            last_report = time.monotonic()
+            say(f"... {time.monotonic() - started:.0f} s of {WAIT:g}: still open")
         await asyncio.sleep(0 if demo_fake is not None else POLL)
     return None
 
 
-@pytest.mark.parametrize("kind", ["profit_target", "stop_loss"])
-async def test_a_level_just_beside_the_price_is_executed_by_the_market_and_reported(demo_client, demo_market, demo_fake, tracker, recorder, kind):
+@pytest.mark.parametrize("kind", ["stop_loss", "profit_target"])           # the stop only needs the price to move; the profit target also has to cross the spread
+async def test_a_level_just_beside_the_price_is_executed_by_the_market_and_reported(demo_client, demo_market, demo_fake, tracker, recorder, kind, say):
     ask, bid = demo_market.ask, demo_market.bid
-    gap = 0.0004                                                              # 0.04 % - above the 0.01 % minimum distance
+    gap = max(2 * demo_market.min_distance_pct / 100, 0.0002)                 # twice the market's minimum distance from the price (0.02 % where it is 0.01 %)
     if kind == "profit_target":
         options = {"profit_level": h.level(ask, 1 + gap, demo_market.decimals), "stop_level": h.level(ask, 0.7, demo_market.decimals)}
         configured, move = options["profit_level"], lambda: demo_fake.set_quote(demo_market.epic, configured + 5, configured + 6)
@@ -62,8 +76,9 @@ async def test_a_level_just_beside_the_price_is_executed_by_the_market_and_repor
     position = await demo_client.get_position(deal_id)
     note = {"configured_level": configured, "position_reports": {"stop_level": position.get("stop_level"), "profit_level": position.get("profit_level")}}
 
-    seconds = await wait_for_exit(demo_client, deal_id, demo_fake, move)
-    note["seconds_until_closed"] = seconds
+    say(f"{demo_market.epic} {kind}: level {configured} ({gap * 100:.3f} % from the price, spread {(ask - bid) / bid * 100:.3f} %), waiting up to {WAIT:g} s")
+    seconds = await wait_for_exit(demo_client, deal_id, demo_fake, move, say)
+    note.update({"seconds_until_closed": seconds, "distance_pct": round(gap * 100, 4), "spread_pct": round((ask - bid) / bid * 100, 4)})
     if seconds is None:
         note["outcome"] = f"not triggered within {WAIT:g} s"
         recorder.note(f"exit_{kind}", note)
