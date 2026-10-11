@@ -17,7 +17,7 @@ from .errors import APIError, AuthError, CapitalError, StreamError
 from .hours import is_closing_for_day, is_closing_for_week, is_market_closed
 from .streaming import PriceStream, Quote
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "CapitalClient", "PriceStream", "Quote",
