@@ -66,9 +66,9 @@ async def test_get_working_orders_is_empty_without_orders(client):
 
 
 async def test_get_working_orders_flattens_the_nested_shape(client, fake):
-    fake.orders["WO1"] = {"epic": "GOLD", "direction": "SELL", "size": 2.0, "level": 2100.0, "type": "STOP", "goodTillDate": "2099-01-01T00:00:00", "created": "2026-07-12T10:00:00"}
+    fake.orders["WO1"] = {"epic": "GOLD", "direction": "SELL", "size": 2.0, "level": 1900.0, "type": "STOP", "goodTillDate": "2099-01-01T00:00:00", "created": "2026-07-12T10:00:00"}
     assert await client.get_working_orders() == [{
-        "deal_id": "WO1", "epic": "GOLD", "direction": "SELL", "size": 2.0, "level": 2100.0, "type": "STOP",
+        "deal_id": "WO1", "epic": "GOLD", "direction": "SELL", "size": 2.0, "level": 1900.0, "type": "STOP",
         "time_in_force": "GOOD_TILL_DATE", "good_till_date": "2099-01-01T00:00:00", "created_date": "2026-07-12T10:00:00"}]
 
 

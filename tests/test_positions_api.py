@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import httpx
 import pytest
 
@@ -29,11 +31,20 @@ async def test_open_position_rejects_a_direction_that_is_not_buy_or_sell_without
     assert fake.requests == []
 
 
-async def test_open_position_sends_stop_and_profit_options_only_when_given(client, fake):
+async def test_open_position_sends_stop_and_profit_options_only_when_given(make_client):
+    sent = []
+
+    def spy(request):
+        if request.method == "POST" and request.url.path == "/api/v1/positions":
+            import json
+            sent.append(json.loads(request.content))
+            return httpx.Response(200, json={"dealReference": "o_x"})
+
+    client = make_client(spy)
     await client.open_position("GOLD", 1, "BUY", stop_level=1900.5, profit_level=2100, guaranteed_stop=False, trailing_stop=True,
                                stop_distance=10, profit_distance=20, stop_amount=5, profit_amount=6)
-    assert fake.bodies[-1] == {"epic": "GOLD", "direction": "BUY", "size": "1", "stopLevel": 1900.5, "profitLevel": 2100, "guaranteedStop": False,
-                               "trailingStop": True, "stopDistance": 10, "profitDistance": 20, "stopAmount": 5, "profitAmount": 6}
+    assert sent[-1] == {"epic": "GOLD", "direction": "BUY", "size": "1", "stopLevel": 1900.5, "profitLevel": 2100, "guaranteedStop": False,
+                        "trailingStop": True, "stopDistance": 10, "profitDistance": 20, "stopAmount": 5, "profitAmount": 6}
 
 
 async def test_open_position_returns_the_reference_and_creates_the_position(client, fake):
@@ -53,10 +64,11 @@ async def test_open_position_raises_api_error_with_status_and_code_when_rejected
 
 # ---------------- get_position ----------------
 async def test_get_position_returns_the_flat_position_plus_reference_and_stops(client, fake):
+    fake.now = lambda: datetime(2026, 7, 12, 10, 0, 0)
     fake.positions["D1"] = {"epic": "GOLD", "size": 2.0, "direction": "SELL", "level": 2000.0}
     fake.meta["D1"] = {"dealReference": "p_D1", "stopLevel": 2100.0, "profitLevel": 1900.0}
     position = await client.get_position("D1")
-    assert position == {"epic": "GOLD", "size": 2.0, "direction": "SELL", "pnl": 0.0, "open_price": 2000.0, "deal_id": "D1",
+    assert position == {"epic": "GOLD", "size": 2.0, "direction": "SELL", "pnl": -2.0, "open_price": 2000.0, "deal_id": "D1",
                         "created_date": "2026-07-12T10:00:00", "deal_reference": "p_D1", "stop_level": 2100.0, "profit_level": 1900.0}
 
 
