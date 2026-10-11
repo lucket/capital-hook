@@ -14,6 +14,7 @@ async def test_open_position_sends_exactly_epic_direction_and_size_by_default(cl
 
 @pytest.mark.parametrize("size, encoded", [(1.5, "1.5"), (5, "5"), (1.0, "1.0"), (0.00001, "0.00001"), (1e-05, "0.00001"), (0.00001234, "0.00001234"), (1e16, "10000000000000000")])
 async def test_open_position_encodes_the_size_as_a_plain_decimal_string(client, fake, size, encoded):
+    fake.min_deal_size["GOLD"], fake.max_deal_size["GOLD"] = 0, 1e17          # this test is about the encoding, not about the limits
     await client.open_position("GOLD", size, "BUY")
     assert fake.bodies[-1]["size"] == encoded
 

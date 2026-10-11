@@ -91,6 +91,10 @@ fake.expire_session()        # next call gets a 401 -> the client logs in again
 fake.fail_open = True        # POST /positions now answers 400
 ```
 
+To test code that trades around opening hours, give the fake a schedule and a clock: `fake.hours = {...}`, `fake.follow_opening_hours = True`,
+`fake.now = lambda: some_utc_datetime`. A market is then `CLOSED` outside its hours and orders are rejected (`MARKET_CLOSED`); the size limits
+`fake.min_deal_size[epic]` / `fake.max_deal_size[epic]` are refused at once with `400 error.invalid.size.minvalue` / `maxvalue`, as Capital.com does.
+
 `FakeCapital` is a small state machine, not a canned responder: positions carry profit and loss, margin and balance follow, stop and
 profit levels trigger when you move the market (`fake.set_quote(...)`), working orders fill and expire (`fake.now` is the clock), opens can be
 rejected after the fact, and you can inject faults (`fake.fail_next(...)`, `fake.lose_response_next(...)` - the request executes but the

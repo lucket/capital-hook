@@ -1,0 +1,92 @@
+{
+  "country": "United States of America",
+  "currency": "USD",
+  "dealing_rules": {
+    "marketOrderPreference": "AVAILABLE_DEFAULT_ON",
+    "maxDealSize": {
+      "unit": "POINTS",
+      "value": 25000
+    },
+    "maxStopOrProfitDistance": {
+      "unit": "PERCENTAGE",
+      "value": 100
+    },
+    "minDealSize": {
+      "unit": "POINTS",
+      "value": 1
+    },
+    "minGuaranteedStopDistance": {
+      "unit": "PERCENTAGE",
+      "value": 5
+    },
+    "minSizeIncrement": {
+      "unit": "POINTS",
+      "value": 1
+    },
+    "minStepDistance": {
+      "unit": "POINTS",
+      "value": 0.01
+    },
+    "minStopOrProfitDistance": {
+      "unit": "PERCENTAGE",
+      "value": 0.01
+    },
+    "trailingStopsPreference": "NOT_AVAILABLE"
+  },
+  "decimals": 2,
+  "epic": "VIX",
+  "expiry": "-",
+  "guaranteed_stop_allowed": true,
+  "lot_size": 1,
+  "margin_factor": [
+    10,
+    "PERCENTAGE"
+  ],
+  "name": "Volatility Index",
+  "opening_hours": {
+    "fri": [
+      "00:00 - 21:00"
+    ],
+    "mon": [
+      "00:00 - 21:00",
+      "22:00 - 00:00"
+    ],
+    "sat": [],
+    "sun": [
+      "22:00 - 00:00"
+    ],
+    "thu": [
+      "00:00 - 21:00",
+      "22:00 - 00:00"
+    ],
+    "tue": [
+      "00:00 - 21:00",
+      "22:00 - 00:00"
+    ],
+    "wed": [
+      "00:00 - 21:00",
+      "22:00 - 00:00"
+    ],
+    "zone": "UTC"
+  },
+  "other_epics_matching_search": [
+    "VIXM",
+    "UVIX",
+    "UVXY",
+    "SVXY"
+  ],
+  "overnight_fee": {
+    "longRate": -0.01096,
+    "shortRate": -0.01096,
+    "swapChargeInterval": 1440,
+    "swapChargeTimestamp": 1791752400000
+  },
+  "price_sample": {
+    "bid": 17.6,
+    "offer": 17.74
+  },
+  "source": "Capital.com DEMO, observed 2026-10-11 by tests/integration/test_demo_vix.py (public market data, no account information)",
+  "streaming_prices": true,
+  "symbol": "VIX",
+  "type": "INDICES"
+}

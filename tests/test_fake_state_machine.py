@@ -72,11 +72,58 @@ async def test_a_closed_market_rejects_the_open_without_any_state_change(client,
     assert [(a["type"], a["status"]) for a in fake.activity] == [("POSITION", "REJECTED")]
 
 
-async def test_below_the_minimum_size_is_rejected(client, fake):
-    fake.min_deal_size["GOLD"] = 0.5
-    confirmation = await client.confirm(await client.open_position("GOLD", 0.1, "BUY"), attempts=1, delay=0)
-    assert confirmation.rejected and confirmation.reason == "MINIMUM_ORDER_SIZE_ERROR" and fake.positions == {}
+async def test_below_the_minimum_size_is_refused_at_once_with_a_400(client, fake):
+    fake.min_deal_size["GOLD"] = 0.5                                             # observed on DEMO: error.invalid.size.minvalue, no reference
+    with pytest.raises(APIError) as exc:
+        await client.open_position("GOLD", 0.1, "BUY")
+    assert (exc.value.status_code, exc.value.error_code) == (400, "error.invalid.size.minvalue") and fake.positions == {} and fake.confirmations == {}
     assert (await client.confirm(await client.open_position("GOLD", 0.5, "BUY"), attempts=1, delay=0)).accepted
+
+
+async def test_above_the_maximum_size_is_refused_at_once_with_a_400(client, fake):
+    fake.max_deal_size["GOLD"] = 50
+    with pytest.raises(APIError) as exc:
+        await client.open_position("GOLD", 51, "BUY")
+    assert (exc.value.status_code, exc.value.error_code) == (400, "error.invalid.size.maxvalue") and fake.positions == {}
+    assert (await client.confirm(await client.open_position("GOLD", 50, "BUY"), attempts=1, delay=0)).accepted
+
+
+async def test_the_market_detail_reports_the_size_limits_the_fake_enforces(client, fake):
+    fake.min_deal_size["GOLD"], fake.max_deal_size["GOLD"] = 1, 25000
+    rules = (await client.get_market("GOLD"))["dealingRules"]
+    assert (rules["minDealSize"]["value"], rules["maxDealSize"]["value"]) == (1, 25000)
+
+
+# ---------------------------------------------------------------- opening hours (status_of / follow_opening_hours)
+VIX_HOURS = {"mon": ["00:00 - 21:00", "22:00 - 00:00"], "fri": ["00:00 - 21:00"], "sat": [], "sun": ["22:00 - 00:00"], "zone": "UTC"}
+
+
+@pytest.mark.parametrize("when, status", [
+    (datetime(2026, 10, 12, 20, 59, 59), "TRADEABLE"), (datetime(2026, 10, 12, 21, 0, 0), "CLOSED"), (datetime(2026, 10, 12, 21, 59, 59), "CLOSED"),
+    (datetime(2026, 10, 12, 22, 0, 0), "TRADEABLE"), (datetime(2026, 10, 11, 21, 59, 59), "CLOSED"), (datetime(2026, 10, 11, 22, 0, 0), "TRADEABLE"),
+    (datetime(2026, 10, 10, 12, 0, 0), "CLOSED")])
+async def test_status_of_follows_the_opening_hours_when_asked_to(client, fake, when, status):
+    fake.hours, fake.follow_opening_hours, fake.now = VIX_HOURS, True, lambda: when
+    assert fake.status_of("GOLD") == status
+    assert (await client.get_market("GOLD"))["snapshot"]["marketStatus"] == status
+
+
+async def test_status_of_ignores_the_opening_hours_by_default_and_an_explicit_status_always_wins(fake):
+    fake.hours, fake.now = VIX_HOURS, lambda: datetime(2026, 10, 10, 12, 0, 0)       # a Saturday
+    assert fake.status_of("GOLD") == "TRADEABLE"
+    fake.follow_opening_hours = True
+    assert fake.status_of("GOLD") == "CLOSED"
+    fake.market_status["GOLD"] = "TRADEABLE"
+    assert fake.status_of("GOLD") == "TRADEABLE"
+
+
+async def test_orders_are_rejected_while_the_schedule_says_closed_and_accepted_when_it_reopens(client, fake):
+    clock = [datetime(2026, 10, 12, 21, 30, 0)]                                  # Monday, in the daily pause
+    fake.hours, fake.follow_opening_hours, fake.now = VIX_HOURS, True, lambda: clock[0]
+    paused = await client.confirm(await client.open_position("GOLD", 1, "BUY"), attempts=1, delay=0)
+    assert paused.rejected and paused.reason == "MARKET_CLOSED" and fake.positions == {}
+    clock[0] = datetime(2026, 10, 12, 22, 0, 0)
+    assert (await client.confirm(await client.open_position("GOLD", 1, "BUY"), attempts=1, delay=0)).accepted and len(fake.positions) == 1
 
 
 async def test_insufficient_funds_is_rejected_and_margin_is_counted_across_positions(client, fake):
