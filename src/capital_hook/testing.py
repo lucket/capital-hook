@@ -48,7 +48,7 @@ ASSUMPTIONS = {
     "id format": "The real API answers 400 error.invalid.dealId for a malformed id and 404 error.not-found.dealId for a well-formed unknown one; "
                  "the fake answers 404 for every unknown id.",
     "unfiltered markets": "GET /markets with no searchTerm / epics returns every market here; the real DEMO server answered 500 (kept for the "
-                          "downstream tests that rely on it). Use the filters.",
+                          "downstream tests that rely on it); set unfiltered_markets_fails = True to get the real behaviour. Use the filters.",
     "unsupported order options": "guaranteed / trailing stops and distance / amount variants are refused with 400 error.unsupported.in.fake.",
 }
 
@@ -90,6 +90,8 @@ class FakeCapital:
         self.confirmations = {}   # dealReference -> confirmation body
         self.meta = {}            # dealId -> {"dealReference", "stopLevel", "profitLevel", "created", "order"}
         self._issued = set()      # deal ids this fake handed out (as opposed to ones a test wrote into `positions`)
+        self.unfiltered_markets_fails = False   # True: GET /markets without searchTerm / epics answers 500, as the DEMO server does
+        self.queries = []         # (method, path, query params) of every request that carried a query string
         self._offset_orders = set()   # ids of orders that closed positions instead of opening one
         self._fills = []          # (orderId, dealId): working orders that became positions
         self._faults = []         # pending injected faults
@@ -334,6 +336,8 @@ class FakeCapital:
     def handler(self, request: httpx.Request) -> httpx.Response:
         path, method = request.url.path, request.method
         self.requests.append((method, path, request.url.host))
+        if request.url.params:
+            self.queries.append((method, path, dict(request.url.params)))
         raw = request.read()
         body = json.loads(raw) if raw else None
         self.bodies.append(body)
@@ -373,6 +377,8 @@ class FakeCapital:
             if wanted:                                         # full details under "marketDetails"
                 known = [e for e in wanted.split(",") if e in self.markets or e in self.quote]
                 return httpx.Response(200, json={"marketDetails": [self._market_detail(e) for e in known]})
+            if self.unfiltered_markets_fails:
+                return self._error(500, 'Cannot invoke "Object.hashCode()" because "key" is null')
             return httpx.Response(200, json={"markets": [{"epic": e, "instrumentType": t} for e, t in self.markets.items()]})
         if path.startswith("/api/v1/markets/") and method == "GET":
             epic = path.rsplit("/", 1)[1]

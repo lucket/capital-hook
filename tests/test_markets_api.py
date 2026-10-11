@@ -1,4 +1,5 @@
 """``get_markets`` / ``get_market`` / ``get_instrument_types``: filters are sent as the documented query parameters."""
+import pytest
 
 
 async def test_get_markets_without_filter_sends_no_query(fake, client):
@@ -60,3 +61,18 @@ async def test_get_markets_by_epics_both_response_keys_are_merged(client, monkey
                                          "marketDetails": [{"instrument": {"epic": "B", "type": "Y"}, "snapshot": {}}]})
     monkeypatch.setattr(client, "_request", fake_request)
     assert [(m["epic"], m["instrumentType"]) for m in await client.get_markets()] == [("A", "X"), ("B", "Y")]
+
+
+async def test_unfiltered_markets_can_fail_like_the_demo_server(fake, client):
+    from capital_hook import APIError
+    fake.unfiltered_markets_fails = True
+    with pytest.raises(APIError) as exc:
+        await client.get_markets()
+    assert exc.value.status_code == 500
+    assert [m["epic"] for m in await client.get_markets(epics=["GOLD"])] == ["GOLD"]      # filtered calls keep working
+
+
+async def test_the_fake_logs_the_query_parameters_it_receives(fake, client):
+    await client.get_markets(epics=["GOLD", "US100"])
+    await client.get_markets(search_term="GOL")
+    assert [q for m, path, q in fake.queries if path == "/api/v1/markets"] == [{"epics": "GOLD,US100"}, {"searchTerm": "GOL"}]
