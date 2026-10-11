@@ -123,8 +123,22 @@ class Recorder:
         self.observe(response.request.method, response.request.url.path, response.status_code, body)
 
     def dump(self, observed_path: Path = OBSERVED_PATH, shapes_path: Path | None = None) -> None:
+        """Write what was observed, merged into an existing file: a run of a few tests must not erase what earlier runs recorded."""
         observed_path.parent.mkdir(parents=True, exist_ok=True)
-        observed_path.write_text(json.dumps({"notes": self.notes, "error_codes": self.error_codes, "shapes": self.shapes}, indent=2, sort_keys=True) + "\n")
+        try:
+            earlier = json.loads(observed_path.read_text())
+        except (FileNotFoundError, ValueError):
+            earlier = {}
+        notes = {**earlier.get("notes", {}), **self.notes}
+        error_codes = {key: list(codes) for key, codes in earlier.get("error_codes", {}).items()}
+        for key, codes in self.error_codes.items():
+            merged = error_codes.setdefault(key, [])
+            merged += [code for code in codes if code not in merged]
+        shapes = dict(earlier.get("shapes", {}))
+        for key, shape in self.shapes.items():
+            shapes[key] = merge_shapes(shapes[key], shape) if key in shapes else shape
+        self.shapes, self.error_codes = shapes, error_codes          # what is written is also what is in memory (and goes to shapes_path)
+        observed_path.write_text(json.dumps({"notes": notes, "error_codes": error_codes, "shapes": shapes}, indent=2, sort_keys=True) + "\n")
         if shapes_path is not None:
             shapes_path.parent.mkdir(parents=True, exist_ok=True)
             shapes_path.write_text(json.dumps(self.shapes, indent=2, sort_keys=True) + "\n")

@@ -222,3 +222,32 @@ async def test_tracker_with_an_epic_closes_everything_left_on_it_even_if_ids_wer
     await client.open_position("US100", 1, "BUY")                                # another market: left alone
     await tracker.cleanup()
     assert [p["epic"] for p in fake.positions.values()] == ["US100"] and fake.orders == {}
+
+
+def test_dump_merges_into_an_existing_file_instead_of_replacing_it(tmp_path):
+    path = tmp_path / "observed.json"
+    first = h.Recorder()
+    first.note("btc", {"min": 0.0001})
+    first.observe("GET", "/api/v1/markets/BTCUSD", 200, {"a": 1})
+    first.observe("POST", "/api/v1/positions", 400, {"errorCode": "error.one"})
+    first.dump(path)
+    second = h.Recorder()
+    second.note("vix", {"epic": "VIX"})
+    second.note("btc", {"min": 0.5})                                   # same key: the newer run wins
+    second.observe("GET", "/api/v1/markets/VIX", 200, {"b": "x"})
+    second.observe("GET", "/api/v1/markets/BTCUSD", 200, {"a": 1, "extra": 2.5})
+    second.observe("POST", "/api/v1/positions", 400, {"errorCode": "error.two"})
+    second.dump(path)
+    data = json.loads(path.read_text())
+    assert data["notes"] == {"btc": {"min": 0.5}, "vix": {"epic": "VIX"}}
+    assert data["error_codes"]["POST /positions 400"] == ["error.one", "error.two"]
+    assert set(data["shapes"]) == {"GET /markets/{id} 200", "POST /positions 400"} and data["shapes"]["GET /markets/{id} 200"] == {"a": "int", "b": "str", "extra": "float"}
+
+
+def test_dump_survives_a_corrupt_earlier_file(tmp_path):
+    path = tmp_path / "observed.json"
+    path.write_text("{not json")
+    rec = h.Recorder()
+    rec.note("x", 1)
+    rec.dump(path)
+    assert json.loads(path.read_text())["notes"] == {"x": 1}

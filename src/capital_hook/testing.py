@@ -28,8 +28,11 @@ from datetime import datetime, timezone
 
 import httpx
 
+from .hours import is_market_closed
+
 ASSUMPTIONS = {
-    "rejection reasons": "Asynchronous rejections use plausible reasons (MARKET_CLOSED, MINIMUM_ORDER_SIZE_ERROR, INSUFFICIENT_FUNDS); "
+    "rejection reasons": "Asynchronous rejections use plausible reasons (MARKET_CLOSED, INSUFFICIENT_FUNDS); size limits are answered at once with "
+                         "400 error.invalid.size.minvalue / maxvalue (observed on DEMO, orders and working orders alike - the latter assumed); "
                          "the real strings are not documented. Branch on dealStatus, never on reason.",
     "confirmation ids": "An accepted open confirms with a dealId of its own (the order) and the position in affectedDeals[OPENED], as in the "
                         "Postman example. For working orders the fake uses the working-order id for both - not yet observed.",
@@ -79,8 +82,10 @@ class FakeCapital:
         self._refs = itertools.count(1)
         self.quote = {"GOLD": (2000.0, 2001.0)}   # epic -> (bid, ask)
         self.markets = {"GOLD": "COMMODITIES", "US100": "INDICES"}
-        self.min_deal_size = {}        # epic -> minimum deal size (default 0.01)
-        self.market_status = {}        # epic -> "TRADEABLE" (default) | "CLOSED" ...
+        self.min_deal_size = {}        # epic -> minimum deal size (default 0.01); a smaller order is answered 400 error.invalid.size.minvalue
+        self.max_deal_size = {}        # epic -> maximum deal size (default 1,000,000); a larger one is answered 400 error.invalid.size.maxvalue
+        self.market_status = {}        # epic -> "TRADEABLE" (default) | "CLOSED" ...; an explicit entry always wins
+        self.follow_opening_hours = False   # True: a market is CLOSED outside ``hours`` (UTC, by the ``now`` clock) and orders are rejected then
         self.hours = {"mon": ["00:00 - 23:59"], "tue": ["00:00 - 23:59"], "wed": ["00:00 - 23:59"],
                       "thu": ["00:00 - 23:59"], "fri": ["00:00 - 21:55"], "sat": [], "sun": ["23:00 - 23:59"]}
         # side tables: richer per-deal data that must not change the shape of `positions`
@@ -277,11 +282,25 @@ class FakeCapital:
             return self._error(400, f"error.invalid.takeprofit.{'minvalue' if long_ else 'maxvalue'}: {level}")
         return None
 
-    def _reject_reason(self, epic: str, size: float, level: float) -> str | None:
-        if self.market_status.get(epic, "TRADEABLE") != "TRADEABLE":
-            return "MARKET_CLOSED"
+    def status_of(self, epic: str) -> str:
+        """``marketStatus`` of an epic: an explicit ``market_status`` entry, else (with ``follow_opening_hours``) the schedule, else TRADEABLE."""
+        if epic in self.market_status:
+            return self.market_status[epic]
+        if self.follow_opening_hours and is_market_closed(self.hours, minutes=0, now=self.now()):
+            return "CLOSED"
+        return "TRADEABLE"
+
+    def _check_size(self, epic: str, size: float):
+        """Size limits are answered at once with a 400 (observed on DEMO), not rejected afterwards."""
         if size < self.min_deal_size.get(epic, 0.01):
-            return "MINIMUM_ORDER_SIZE_ERROR"
+            return self._error(400, "error.invalid.size.minvalue")
+        if size > self.max_deal_size.get(epic, 1_000_000):
+            return self._error(400, "error.invalid.size.maxvalue")
+        return None
+
+    def _reject_reason(self, epic: str, size: float, level: float) -> str | None:
+        if self.status_of(epic) != "TRADEABLE":
+            return "MARKET_CLOSED"
         available = self._balance + sum(self.upl(d) for d in self.positions) - self.margin()
         if size * level / self._leverage(epic) > available:
             return "INSUFFICIENT_FUNDS"
@@ -325,12 +344,12 @@ class FakeCapital:
         return {
             "instrument": {"epic": epic, "name": epic, "type": self.markets.get(epic, ""), "lotSize": 1, "currency": "USD", "openingHours": self.hours},
             "dealingRules": {"minDealSize": {"unit": "POINTS", "value": self.min_deal_size.get(epic, 0.01)},
+                             "maxDealSize": {"unit": "POINTS", "value": self.max_deal_size.get(epic, 1_000_000)},
                              "minStepDistance": {"unit": "POINTS", "value": 0.01},
                              "minStopOrProfitDistance": {"unit": "PERCENTAGE", "value": 0.01},
                              "maxStopOrProfitDistance": {"unit": "PERCENTAGE", "value": 100},
-                             "minSizeIncrement": {"unit": "POINTS", "value": 0.01},
-                             "maxDealSize": {"unit": "POINTS", "value": 1000}},
-            "snapshot": {"marketStatus": self.market_status.get(epic, "TRADEABLE"), "bid": bid, "offer": ask},
+                             "minSizeIncrement": {"unit": "POINTS", "value": self.min_deal_size.get(epic, 0.01)}},
+            "snapshot": {"marketStatus": self.status_of(epic), "bid": bid, "offer": ask},
         }
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -444,7 +463,7 @@ class FakeCapital:
             return self._error(404, "error.not-found.epic")
         bid, ask = self.quote[epic]
         level = ask if body["direction"] == "BUY" else bid
-        bad = self._check_levels(body["direction"], level, body)
+        bad = self._check_size(epic, float(body["size"])) or self._check_levels(body["direction"], level, body)
         if bad is not None:
             return bad
         reference = self._new_reference("o")
