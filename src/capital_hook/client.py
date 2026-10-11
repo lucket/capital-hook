@@ -218,12 +218,21 @@ class CapitalClient:
         await self._request("PUT", "/api/v1/accounts/preferences", json=payload)
 
     # ---- markets ----
-    async def get_markets(self) -> list[dict]:
-        return (await self._request("GET", "/api/v1/markets")).json().get("markets", [])
+    async def get_markets(self, search_term: str | None = None, epics: list[str] | tuple[str, ...] | None = None) -> list[dict]:
+        """Market summaries. ``search_term`` / ``epics`` (max 50) narrow the answer; ``search_term`` wins when both are given.
 
-    async def get_instrument_types(self) -> dict[str, str]:
-        """Map of epic -> instrumentType for every tradable market."""
-        return {m["epic"]: m["instrumentType"] for m in await self.get_markets()}
+        Called with no argument the request has no filter, which the DEMO server answered with a 500 in testing.
+        """
+        params = {}
+        if search_term:
+            params["searchTerm"] = search_term
+        if epics:
+            params["epics"] = ",".join(epics)
+        return (await self._request("GET", "/api/v1/markets", params=params or None)).json().get("markets", [])
+
+    async def get_instrument_types(self, epics: list[str] | tuple[str, ...] | None = None) -> dict[str, str]:
+        """Map of epic -> instrumentType, for ``epics`` when given, otherwise for whatever an unfiltered ``get_markets`` returns."""
+        return {m["epic"]: m["instrumentType"] for m in await self.get_markets(epics=epics)}
 
     async def get_market(self, epic: str) -> dict:
         return (await self._request("GET", f"/api/v1/markets/{epic}")).json()

@@ -40,6 +40,8 @@ ASSUMPTIONS = {
     "netting": "Hedging mode is stored but NOT modelled: every open creates its own position, even in the opposite direction.",
     "session tokens": "A new login invalidates the tokens of the previous session.",
     "close/update confirmations": "GET /confirms is only available for opens and working orders.",
+    "unfiltered markets": "GET /markets with no searchTerm / epics returns every market here; the real DEMO server answered 500 (kept for the "
+                          "downstream tests that rely on it). Use the filters.",
     "unsupported order options": "guaranteed / trailing stops and distance / amount variants are refused with 400 error.unsupported.in.fake.",
 }
 
@@ -315,7 +317,13 @@ class FakeCapital:
             return httpx.Response(200, json={"status": "OK"})
 
         if path == "/api/v1/markets" and method == "GET":
-            return httpx.Response(200, json={"markets": [{"epic": e, "instrumentType": t} for e, t in self.markets.items()]})
+            found = self.markets.items()
+            term, wanted = request.url.params.get("searchTerm"), request.url.params.get("epics")
+            if term:
+                found = [(e, t) for e, t in found if term.lower() in e.lower()]
+            elif wanted:
+                found = [(e, t) for e, t in found if e in wanted.split(",")]
+            return httpx.Response(200, json={"markets": [{"epic": e, "instrumentType": t} for e, t in found]})
         if path.startswith("/api/v1/markets/") and method == "GET":
             epic = path.rsplit("/", 1)[1]
             if epic not in self.quote and epic not in self.markets:

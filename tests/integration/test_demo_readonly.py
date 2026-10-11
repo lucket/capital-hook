@@ -18,15 +18,24 @@ async def test_ping_account_and_preferences(demo_client, recorder):
 
 
 async def test_markets_prices_and_opening_hours(demo_client, demo_market, recorder):
-    markets = await demo_client.get_markets()
-    assert markets and {"epic", "instrumentType"} <= set(markets[0])
-    types = await demo_client.get_instrument_types()
+    try:                                                   # the unfiltered call answered 500 on DEMO: record what happens, do not fail on it
+        unfiltered = await demo_client.get_markets()
+        recorder.note("markets_unfiltered", {"status": 200, "count": len(unfiltered)})
+    except APIError as exc:
+        recorder.note("markets_unfiltered", {"status": exc.status_code, "error_code": exc.error_code})
+        unfiltered = []
+    markets = await demo_client.get_markets(epics=[demo_market.epic])
+    assert [m["epic"] for m in markets] == [demo_market.epic] and "instrumentType" in markets[0]
+    found = await demo_client.get_markets(search_term=demo_market.epic[:3])
+    assert demo_market.epic in {m["epic"] for m in found}
+    recorder.note("markets_search", {"search_returns_market": True, "matches_for_3_letters": len(found)})
+    types = await demo_client.get_instrument_types([demo_market.epic])
     assert types[demo_market.epic] == demo_market.instrument_type or not demo_market.instrument_type
     ask, bid = await demo_client.get_prices(demo_market.epic)
     assert ask >= bid > 0
 
     hours = await demo_client.get_opening_hours(demo_market.epic)
-    sample = [m["epic"] for m in markets[:8]]
+    sample = [m["epic"] for m in (unfiltered or found)[:8]]
     wrapping = {}
     for epic in dict.fromkeys([demo_market.epic, *sample]):
         epic_hours = hours if epic == demo_market.epic else await demo_client.get_opening_hours(epic)
