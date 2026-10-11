@@ -198,3 +198,36 @@ async def test_an_error_that_is_not_about_the_levels_is_raised_not_retried():
     with _pytest.raises(APIError) as exc:
         await exits.open_with_bracket(client, tracker, "GOLD", 0.1, "BUY", 2, 0.0002)
     assert exc.value.status_code == 503
+
+
+# ---------------------------------------------------------------- demo_cleanup.py --record-hold
+def _load_cleanup_module():
+    import importlib.util
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    spec = importlib.util.spec_from_file_location("demo_cleanup_under_test", INTEGRATION / "demo_cleanup.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_record_hold_rebuilds_the_record_for_exactly_one_open_position(tmp_path):
+    import json
+    cleanup = _load_cleanup_module()
+    path = tmp_path / ".demo-vix-hold.json"
+    message = cleanup.hold_record([{"deal_id": "D1"}], path)
+    assert "recorded D1" in message and json.loads(path.read_text())["deal_id"] == "D1"
+
+
+def test_record_hold_refuses_when_it_cannot_tell_which_position_is_the_held_one(tmp_path):
+    cleanup = _load_cleanup_module()
+    path = tmp_path / "hold.json"
+    assert "found 0" in cleanup.hold_record([], path) and "found 2" in cleanup.hold_record([{"deal_id": "A"}, {"deal_id": "B"}], path) and not path.exists()
+
+
+def test_record_hold_never_overwrites_a_record_that_names_another_deal(tmp_path):
+    cleanup = _load_cleanup_module()
+    path = tmp_path / "hold.json"
+    path.write_text('{"deal_id": "OTHER"}')
+    assert "different deal" in cleanup.hold_record([{"deal_id": "D1"}], path) and path.read_text() == '{"deal_id": "OTHER"}'
+    assert "recorded OTHER" in cleanup.hold_record([{"deal_id": "OTHER"}], path)
